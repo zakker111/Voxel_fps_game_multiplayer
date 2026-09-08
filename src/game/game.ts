@@ -333,6 +333,34 @@ export class Game {
       }
     }
 
+    // Check for voxel hits if no bot was hit
+    if (!hitBot) {
+      const voxelHit = this.world.raycast(origin, dir, 100);
+      if (voxelHit) {
+        const voxel = this.world.getVoxel(voxelHit.voxelPos.x, voxelHit.voxelPos.y, voxelHit.voxelPos.z);
+        if (voxel && voxel.type === VOXEL_BUILT) {
+          // Damage built voxel
+          const destroyed = this.world.damageVoxel(voxelHit.voxelPos.x, voxelHit.voxelPos.y, voxelHit.voxelPos.z, 1);
+          this.world.rebuildMesh();
+          this.sounds.voxelBreak();
+          
+          if (destroyed) {
+            this.showMessage('Voxel destroyed!');
+            const collapsed = this.world.collapseDisconnected();
+            if (collapsed > 0) {
+              this.sounds.collapse();
+              this.showMessage(`Structure collapsed! (${collapsed} voxels)`);
+            }
+          } else {
+            const remaining = this.world.getVoxel(voxelHit.voxelPos.x, voxelHit.voxelPos.y, voxelHit.voxelPos.z);
+            if (remaining) {
+              this.showMessage(`Voxel damaged! (${remaining.durability}/3 HP)`);
+            }
+          }
+        }
+      }
+    }
+
     if (hitBot && closestBot) {
       const dmg = isHeadshot ? weapon.damage.head : weapon.damage.body;
       closestBot.hp -= dmg;
@@ -569,11 +597,40 @@ export class Game {
     rightArm.position.set(0.4, 1.1, 0);
     group.add(rightArm);
 
-    const weaponGeo = new THREE.BoxGeometry(0.08, 0.08, 0.5);
-    const weaponMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
-    const weapon = new THREE.Mesh(weaponGeo, weaponMat);
-    weapon.position.set(0.45, 1.1, -0.3);
-    group.add(weapon);
+    // Weapon - more visible and realistic
+    const weaponGroup = new THREE.Group();
+    
+    // Main barrel
+    const wBarrelGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8);
+    const wBarrelMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+    const wBarrel = new THREE.Mesh(wBarrelGeo, wBarrelMat);
+    wBarrel.rotation.x = Math.PI / 2;
+    wBarrel.position.set(0, 0, -0.3);
+    weaponGroup.add(wBarrel);
+    
+    // Receiver
+    const wReceiverGeo = new THREE.BoxGeometry(0.12, 0.1, 0.25);
+    const wReceiverMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
+    const wReceiver = new THREE.Mesh(wReceiverGeo, wReceiverMat);
+    wReceiver.position.set(0, 0, 0);
+    weaponGroup.add(wReceiver);
+    
+    // Stock
+    const wStockGeo = new THREE.BoxGeometry(0.08, 0.12, 0.2);
+    const wStockMat = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
+    const wStock = new THREE.Mesh(wStockGeo, wStockMat);
+    wStock.position.set(0, -0.02, 0.2);
+    weaponGroup.add(wStock);
+    
+    // Magazine
+    const wMagGeo = new THREE.BoxGeometry(0.06, 0.15, 0.08);
+    const wMagMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+    const wMag = new THREE.Mesh(wMagGeo, wMagMat);
+    wMag.position.set(0, -0.12, 0);
+    weaponGroup.add(wMag);
+    
+    weaponGroup.position.set(0.45, 1.1, -0.2);
+    group.add(weaponGroup);
 
     return group;
   }
@@ -960,7 +1017,7 @@ export class Game {
       toTarget.y = 0;
       if (toTarget.length() > 0.5) {
         toTarget.normalize();
-        const speed = bot.isCrouching ? 2 : 4;
+        const speed = bot.isCrouching ? 3 : 6; // Increased speed
         const newX = bot.position.x + toTarget.x * speed * dt;
         const newZ = bot.position.z + toTarget.z * speed * dt;
 

@@ -167,7 +167,8 @@ export class VoxelWorld {
       if ((child as THREE.Mesh).geometry) (child as THREE.Mesh).geometry.dispose();
     }
 
-    const groups: Map<number, THREE.Matrix4[]> = new Map();
+    // Group by type and durability for built voxels
+    const groups: Map<string, THREE.Matrix4[]> = new Map();
 
     for (const [k, v] of this.voxels) {
       if (v.type === VOXEL_AIR) continue;
@@ -182,10 +183,13 @@ export class VoxelWorld {
 
       if (!exposed) continue;
 
-      if (!groups.has(v.type)) groups.set(v.type, []);
+      // For built voxels, include durability in the group key
+      const groupKey = v.type === VOXEL_BUILT ? `${v.type}_${v.durability}` : `${v.type}`;
+      
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
       const matrix = new THREE.Matrix4();
       matrix.setPosition(x, y, z);
-      groups.get(v.type)!.push(matrix);
+      groups.get(groupKey)!.push(matrix);
     }
 
     const colors: Record<number, number> = {
@@ -195,10 +199,25 @@ export class VoxelWorld {
       [VOXEL_BUILT]: 0xc4a35a,
     };
 
-    for (const [type, matrices] of groups) {
+    for (const [groupKey, matrices] of groups) {
       if (matrices.length === 0) continue;
+      
+      const [typeStr, durabilityStr] = groupKey.split('_');
+      const type = parseInt(typeStr);
+      let color = colors[type] || 0xffffff;
+      
+      // Darken built voxels based on durability
+      if (type === VOXEL_BUILT && durabilityStr) {
+        const durability = parseInt(durabilityStr);
+        const darknessFactor = durability / 3; // 3 = full brightness, 1 = darkest
+        const r = ((color >> 16) & 0xFF) * darknessFactor;
+        const g = ((color >> 8) & 0xFF) * darknessFactor;
+        const b = (color & 0xFF) * darknessFactor;
+        color = (Math.floor(r) << 16) | (Math.floor(g) << 8) | Math.floor(b);
+      }
+      
       const geo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
-      const mat = new THREE.MeshLambertMaterial({ color: colors[type] || 0xffffff });
+      const mat = new THREE.MeshLambertMaterial({ color });
       const instancedMesh = new THREE.InstancedMesh(geo, mat, matrices.length);
 
       for (let i = 0; i < matrices.length; i++) {
