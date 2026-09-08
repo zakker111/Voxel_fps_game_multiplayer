@@ -165,6 +165,20 @@ export class VoxelWorld {
   private voxelIndexMap: Map<string, number> = new Map();
   private static sharedGeometry: THREE.BoxGeometry | null = null;
   private static sharedMaterial: THREE.MeshLambertMaterial | null = null;
+  private needsRebuild: boolean = false;
+  
+  // Mark mesh as needing rebuild (deferred to next frame)
+  markDirty(): void {
+    this.needsRebuild = true;
+  }
+  
+  // Call once per frame to handle deferred rebuilds
+  update(): void {
+    if (this.needsRebuild) {
+      this.needsRebuild = false;
+      this.rebuildMesh();
+    }
+  }
   
   private getBaseColor(type: number): number {
     const colors: Record<number, number> = {

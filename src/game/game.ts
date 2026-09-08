@@ -362,9 +362,10 @@ export class Game {
           const destroyed = this.world.damageVoxel(x, y, z, 1);
           
           if (destroyed) {
-            // Full rebuild needed (voxel removed)
-            this.world.rebuildMesh();
+            // Mark for rebuild (deferred to next frame)
+            this.world.markDirty();
             this.sounds.voxelBreak();
+            this.showMessage('Voxel destroyed!');
             const collapsed = this.world.collapseDisconnected();
             if (collapsed > 0) {
               this.sounds.collapse();
@@ -416,8 +417,8 @@ export class Game {
       const destroyed = this.world.damageVoxel(x, y, z, 1);
 
       if (destroyed) {
-        // Full rebuild needed (voxel removed)
-        this.world.rebuildMesh();
+        // Mark for rebuild (deferred to next frame)
+        this.world.markDirty();
         this.sounds.voxelBreak();
         this.inventory++;
         this.showMessage(`+1 voxel (Inventory: ${this.inventory})`);
@@ -459,7 +460,7 @@ export class Game {
         }
       }
       if (destroyed) {
-        this.world.rebuildMesh();
+        this.world.markDirty();
         this.sounds.voxelBreak();
         const collapsed = this.world.collapseDisconnected();
         if (collapsed > 0) {
@@ -501,7 +502,7 @@ export class Game {
 
         this.world.setVoxel(px, py, pz, VOXEL_BUILT, 3);
         this.inventory--;
-        this.world.rebuildMesh();
+        this.world.markDirty();
         this.sounds.buildPlace();
         this.showMessage(`Built! (Inventory: ${this.inventory})`);
       } else if (this.world.isSolid(px, py, pz)) {
@@ -1255,6 +1256,7 @@ export class Game {
 
     const wasDead = this.player.isDead;
     this.player.update(dt);
+    this.world.update(); // Handle deferred mesh rebuilds
     if (wasDead && !this.player.isDead) {
       this.sounds.respawn();
     }
