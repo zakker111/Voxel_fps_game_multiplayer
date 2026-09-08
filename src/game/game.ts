@@ -105,6 +105,8 @@ export class Game {
   hipPosition: THREE.Vector3 = new THREE.Vector3(0.3, -0.25, -0.5);
   adsPosition: THREE.Vector3 = new THREE.Vector3(0, -0.15, -0.35);
 
+  gameMode: 'multiplayer' | 'singleplayer' = 'multiplayer';
+
   private boundResize: () => void;
   private boundMouseDown: (e: MouseEvent) => void;
   private boundMouseUp: (e: MouseEvent) => void;
@@ -118,10 +120,11 @@ export class Game {
     smg: { fireRate: 0.1, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.04, name: 'SMG' },
   };
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, mode: 'multiplayer' | 'singleplayer' = 'multiplayer') {
     this.canvas = canvas;
     this.clock = new THREE.Clock();
     this.sounds = new SoundManager();
+    this.gameMode = mode;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87CEEB);
@@ -177,8 +180,11 @@ export class Game {
     this.createWeaponModels();
     this.switchWeaponModel('rifle');
 
-    this.spawnTeamBots('blue', 6);
-    this.spawnTeamBots('red', 7);
+    // Only spawn bots in multiplayer mode
+    if (this.gameMode === 'multiplayer') {
+      this.spawnTeamBots('blue', 6);
+      this.spawnTeamBots('red', 7);
+    }
 
     this.boundResize = this.onResize.bind(this);
     this.boundMouseDown = this.onMouseDown.bind(this);
@@ -338,14 +344,13 @@ export class Game {
       const voxelHit = this.world.raycast(origin, dir, 100);
       if (voxelHit) {
         const voxel = this.world.getVoxel(voxelHit.voxelPos.x, voxelHit.voxelPos.y, voxelHit.voxelPos.z);
-        if (voxel && voxel.type === VOXEL_BUILT) {
-          // Damage built voxel
+        if (voxel) {
+          // Damage any voxel (not just built ones)
           const destroyed = this.world.damageVoxel(voxelHit.voxelPos.x, voxelHit.voxelPos.y, voxelHit.voxelPos.z, 1);
           this.world.rebuildMesh();
           this.sounds.voxelBreak();
           
           if (destroyed) {
-            this.showMessage('Voxel destroyed!');
             const collapsed = this.world.collapseDisconnected();
             if (collapsed > 0) {
               this.sounds.collapse();

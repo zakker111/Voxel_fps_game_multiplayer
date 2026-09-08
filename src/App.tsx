@@ -11,21 +11,25 @@ function App() {
     blueKills: 0, redKills: 0, isAiming: false,
   });
   const [started, setStarted] = useState(false);
+  const [gameMode, setGameMode] = useState<'multiplayer' | 'singleplayer' | null>(null);
 
   useEffect(() => {
-    if (!canvasRef.current || gameRef.current) return;
-    const game = new Game(canvasRef.current);
+    if (!canvasRef.current || gameRef.current || !gameMode) return;
+    const game = new Game(canvasRef.current, gameMode);
     game.onStateChange = (state) => setGameState(state);
     game.start();
     gameRef.current = game;
     return () => { game.destroy(); };
-  }, []);
+  }, [gameMode]);
 
-  const handleStart = () => {
-    if (canvasRef.current && gameRef.current) {
-      gameRef.current.requestPointerLock(canvasRef.current);
-      setStarted(true);
-    }
+  const handleStart = (mode: 'multiplayer' | 'singleplayer') => {
+    setGameMode(mode);
+    setTimeout(() => {
+      if (canvasRef.current && gameRef.current) {
+        gameRef.current.requestPointerLock(canvasRef.current);
+        setStarted(true);
+      }
+    }, 100);
   };
 
   const handleCanvasClick = () => {
@@ -56,9 +60,14 @@ function App() {
             <h1 className="text-5xl font-bold text-white mb-3">🎮 Voxel FPS</h1>
             <p className="text-lg text-gray-300 mb-1">Red vs Blue — Capture the Flag</p>
             <p className="text-sm text-gray-400 mb-6">You are <span className="text-blue-400 font-bold">BLUE</span> team. Push to the <span className="text-red-400 font-bold">RED</span> flag!</p>
-            <button onClick={handleStart} className="px-8 py-4 bg-[#00ff88] text-black font-bold text-xl rounded-xl hover:bg-[#00cc66] transition-colors">
-              Click to Play
-            </button>
+            <div className="flex gap-4 justify-center mb-6">
+              <button onClick={() => handleStart('multiplayer')} className="px-8 py-4 bg-[#00ff88] text-black font-bold text-xl rounded-xl hover:bg-[#00cc66] transition-colors">
+                🎮 Multiplayer
+              </button>
+              <button onClick={() => handleStart('singleplayer')} className="px-8 py-4 bg-blue-600 text-white font-bold text-xl rounded-xl hover:bg-blue-700 transition-colors">
+                🧪 Singleplayer
+              </button>
+            </div>
             <div className="mt-6 bg-gray-900/60 rounded-xl p-5 text-left max-w-xl mx-auto text-sm">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -81,7 +90,12 @@ function App() {
                 <p className="text-gray-300"><b>Left Click</b> — Shoot / Use tool</p>
                 <p className="text-gray-300"><b>Right Click</b> — Toggle iron sights / Build</p>
                 <p className="text-gray-300"><b>Mouse Wheel</b> — Switch equipment</p>
-                <p className="text-gray-400 text-xs mt-2">1 headshot / 3 body shots to kill • Bots push toward enemy flag</p>
+                <div className="mt-2 text-xs text-gray-400 space-y-1">
+                  <p>🎯 1 headshot / 3 body shots to kill</p>
+                  <p>🏗️ <b>How to build:</b> Harvest blocks with pickaxe (4), then right-click to place</p>
+                  <p>💥 All terrain is destroyable by gunfire (3 shots per voxel)</p>
+                  <p>🧪 Singleplayer mode: No bots, test building & combat freely</p>
+                </div>
               </div>
             </div>
           </div>
@@ -90,20 +104,31 @@ function App() {
 
       {started && (
         <>
-          {/* Scoreboard */}
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
-            <div className="flex items-center bg-gray-900/90 rounded-xl overflow-hidden border-2 border-gray-700">
-              <div className="px-5 py-2 bg-blue-900/40 flex items-center gap-2">
-                <span className="text-blue-300 font-bold text-sm">BLUE</span>
-                <span className="text-white font-bold text-xl">{gameState.blueKills}</span>
-              </div>
-              <div className="px-3 py-2 text-gray-500 font-bold">VS</div>
-              <div className="px-5 py-2 bg-red-900/40 flex items-center gap-2">
-                <span className="text-white font-bold text-xl">{gameState.redKills}</span>
-                <span className="text-red-300 font-bold text-sm">RED</span>
+          {/* Scoreboard - only in multiplayer */}
+          {gameMode === 'multiplayer' && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
+              <div className="flex items-center bg-gray-900/90 rounded-xl overflow-hidden border-2 border-gray-700">
+                <div className="px-5 py-2 bg-blue-900/40 flex items-center gap-2">
+                  <span className="text-blue-300 font-bold text-sm">BLUE</span>
+                  <span className="text-white font-bold text-xl">{gameState.blueKills}</span>
+                </div>
+                <div className="px-3 py-2 text-gray-500 font-bold">VS</div>
+                <div className="px-5 py-2 bg-red-900/40 flex items-center gap-2">
+                  <span className="text-white font-bold text-xl">{gameState.redKills}</span>
+                  <span className="text-red-300 font-bold text-sm">RED</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
+          
+          {/* Singleplayer mode indicator */}
+          {gameMode === 'singleplayer' && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
+              <div className="bg-blue-900/80 rounded-xl px-6 py-2 border-2 border-blue-600">
+                <span className="text-blue-200 font-bold text-sm">🧪 SINGLEPLAYER MODE</span>
+              </div>
+            </div>
+          )}
 
           {/* Health */}
           <div className="absolute bottom-8 left-8 z-10">

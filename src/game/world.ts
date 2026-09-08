@@ -183,8 +183,8 @@ export class VoxelWorld {
 
       if (!exposed) continue;
 
-      // For built voxels, include durability in the group key
-      const groupKey = v.type === VOXEL_BUILT ? `${v.type}_${v.durability}` : `${v.type}`;
+      // Include durability in the group key for all voxel types
+      const groupKey = `${v.type}_${v.durability}`;
       
       if (!groups.has(groupKey)) groups.set(groupKey, []);
       const matrix = new THREE.Matrix4();
@@ -206,8 +206,8 @@ export class VoxelWorld {
       const type = parseInt(typeStr);
       let color = colors[type] || 0xffffff;
       
-      // Darken built voxels based on durability
-      if (type === VOXEL_BUILT && durabilityStr) {
+      // Darken voxels based on durability (all types)
+      if (durabilityStr) {
         const durability = parseInt(durabilityStr);
         const darknessFactor = durability / 3; // 3 = full brightness, 1 = darkest
         const r = ((color >> 16) & 0xFF) * darknessFactor;
