@@ -46,6 +46,16 @@ interface Bot {
   strafeDirection: number;
   stuckTimer: number;
   lastPos: THREE.Vector3;
+  // Animation parts
+  leftLeg: THREE.Mesh;
+  rightLeg: THREE.Mesh;
+  leftArm: THREE.Mesh;
+  rightArm: THREE.Mesh;
+  head: THREE.Mesh;
+  walkCycle: number;
+  isMoving: boolean;
+  targetYaw: number;
+  currentYaw: number;
 }
 
 interface Weapon {
@@ -142,11 +152,13 @@ export class Game {
     const sun = new THREE.DirectionalLight(0xffffff, 0.8);
     sun.position.set(30, 50, 20);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1024, 1024); // Reduced for performance
     sun.shadow.camera.left = -50;
     sun.shadow.camera.right = 50;
     sun.shadow.camera.top = 50;
     sun.shadow.camera.bottom = -50;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 150;
     this.scene.add(sun);
 
     this.world = new VoxelWorld();
@@ -345,22 +357,27 @@ export class Game {
       if (voxelHit) {
         const voxel = this.world.getVoxel(voxelHit.voxelPos.x, voxelHit.voxelPos.y, voxelHit.voxelPos.z);
         if (voxel) {
+          const { x, y, z } = voxelHit.voxelPos;
           // Damage any voxel (not just built ones)
-          const destroyed = this.world.damageVoxel(voxelHit.voxelPos.x, voxelHit.voxelPos.y, voxelHit.voxelPos.z, 1);
-          this.world.rebuildMesh();
-          this.sounds.voxelBreak();
+          const destroyed = this.world.damageVoxel(x, y, z, 1);
           
           if (destroyed) {
+            // Full rebuild needed (voxel removed)
+            this.world.rebuildMesh();
+            this.sounds.voxelBreak();
             const collapsed = this.world.collapseDisconnected();
             if (collapsed > 0) {
               this.sounds.collapse();
               this.showMessage(`Structure collapsed! (${collapsed} voxels)`);
             }
           } else {
-            const remaining = this.world.getVoxel(voxelHit.voxelPos.x, voxelHit.voxelPos.y, voxelHit.voxelPos.z);
+            // Fast color update (no rebuild!)
+            const remaining = this.world.getVoxel(x, y, z);
             if (remaining) {
+              this.world.updateVoxelColor(x, y, z, remaining.type, remaining.durability);
               this.showMessage(`Voxel damaged! (${remaining.durability}/3 HP)`);
             }
+            this.sounds.voxelBreak();
           }
         }
       }
@@ -395,11 +412,13 @@ export class Game {
     const hit = this.world.raycast(origin, dir, 5);
 
     if (hit && this.world.canDig(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z)) {
-      const destroyed = this.world.damageVoxel(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z, 1);
-      this.world.rebuildMesh();
-      this.sounds.voxelBreak();
+      const { x, y, z } = hit.voxelPos;
+      const destroyed = this.world.damageVoxel(x, y, z, 1);
 
       if (destroyed) {
+        // Full rebuild needed (voxel removed)
+        this.world.rebuildMesh();
+        this.sounds.voxelBreak();
         this.inventory++;
         this.showMessage(`+1 voxel (Inventory: ${this.inventory})`);
         const collapsed = this.world.collapseDisconnected();
@@ -408,8 +427,13 @@ export class Game {
           this.showMessage(`Structure collapsed! (${collapsed} voxels)`);
         }
       } else {
-        const v = this.world.getVoxel(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z);
-        if (v) this.showMessage(`Durability: ${v.durability}/3`);
+        // Fast color update (no rebuild!)
+        const v = this.world.getVoxel(x, y, z);
+        if (v) {
+          this.world.updateVoxelColor(x, y, z, v.type, v.durability);
+          this.showMessage(`Durability: ${v.durability}/3`);
+        }
+        this.sounds.voxelBreak();
       }
     }
     this.emitState();
@@ -431,7 +455,7 @@ export class Game {
         const vy = hit.voxelPos.y + Math.round(hit.normal.y) * i;
         const vz = hit.voxelPos.z + Math.round(hit.normal.z) * i;
         if (this.world.canDig(vx, vy, vz)) {
-          if (this.world.damageVoxel(vx, vy, vz, 1)) destroyed = true;
+          if (this.world.damageVoxel(vx, vy, vz, 3)) destroyed = true; // Spade destroys instantly
         }
       }
       if (destroyed) {
@@ -524,7 +548,7 @@ export class Game {
 
     for (let i = 0; i < count; i++) {
       const pos = this.getSafeSpawnPos(team);
-      const group = this.createBotMesh(team);
+      const { group, leftLeg, rightLeg, leftArm, rightArm, head } = this.createBotMesh(team);
       group.position.copy(pos);
       this.scene.add(group);
 
@@ -550,6 +574,15 @@ export class Game {
         isCrouching: false,
         crouchTimer: 0,
         behaviorState: 'patrol',
+        leftLeg,
+        rightLeg,
+        leftArm,
+        rightArm,
+        head,
+        walkCycle: Math.random() * Math.PI * 2,
+        isMoving: false,
+        targetYaw: 0,
+        currentYaw: 0,
         behaviorTimer: 3 + Math.random() * 4,
         strafeDirection: Math.random() > 0.5 ? 1 : -1,
         stuckTimer: 0,
@@ -558,7 +591,7 @@ export class Game {
     }
   }
 
-  private createBotMesh(team: Team): THREE.Group {
+  private createBotMesh(team: Team): { group: THREE.Group; leftLeg: THREE.Mesh; rightLeg: THREE.Mesh; leftArm: THREE.Mesh; rightArm: THREE.Mesh; head: THREE.Mesh } {
     const colors = TEAM_COLORS[team];
     const group = new THREE.Group();
 
@@ -566,14 +599,12 @@ export class Game {
     const bodyMat = new THREE.MeshLambertMaterial({ color: colors.body });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.position.y = 1.1;
-    body.castShadow = true;
     group.add(body);
 
     const headGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
     const headMat = new THREE.MeshLambertMaterial({ color: 0xffdbac });
     const head = new THREE.Mesh(headGeo, headMat);
     head.position.y = 1.8;
-    head.castShadow = true;
     group.add(head);
 
     const helmetGeo = new THREE.BoxGeometry(0.45, 0.2, 0.45);
@@ -582,6 +613,7 @@ export class Game {
     helmet.position.y = 2.05;
     group.add(helmet);
 
+    // Legs with pivot point at hip for animation
     const legGeo = new THREE.BoxGeometry(0.2, 0.6, 0.25);
     const legMat = new THREE.MeshLambertMaterial({ color: colors.legs });
     const leftLeg = new THREE.Mesh(legGeo, legMat);
@@ -592,6 +624,7 @@ export class Game {
     rightLeg.position.set(0.15, 0.3, 0);
     group.add(rightLeg);
 
+    // Arms with pivot at shoulder
     const armGeo = new THREE.BoxGeometry(0.18, 0.6, 0.2);
     const armMat = new THREE.MeshLambertMaterial({ color: colors.body });
     const leftArm = new THREE.Mesh(armGeo, armMat);
@@ -637,7 +670,7 @@ export class Game {
     weaponGroup.position.set(0.45, 1.1, -0.2);
     group.add(weaponGroup);
 
-    return group;
+    return { group, leftLeg, rightLeg, leftArm, rightArm, head };
   }
 
   private createNameTag(team: Team, name: string): THREE.Sprite {
@@ -1020,12 +1053,16 @@ export class Game {
 
       const toTarget = bot.targetPos.clone().sub(bot.position);
       toTarget.y = 0;
-      if (toTarget.length() > 0.5) {
+      const distToTarget = toTarget.length();
+      
+      if (distToTarget > 0.5) {
         toTarget.normalize();
-        const speed = bot.isCrouching ? 3 : 6; // Increased speed
+        const speed = bot.isCrouching ? 3 : 6;
         const newX = bot.position.x + toTarget.x * speed * dt;
         const newZ = bot.position.z + toTarget.z * speed * dt;
 
+        bot.isMoving = true;
+        
         if (this.botCanMoveTo(newX, bot.position.z, bot.position.y)) {
           bot.position.x = newX;
         }
@@ -1033,11 +1070,21 @@ export class Game {
           bot.position.z = newZ;
         }
 
-        if (enemyTarget) {
+        // Set target yaw based on situation
+        if (enemyTarget && distToEnemy < 35) {
+          // Face enemy when in combat range
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
-          bot.mesh.rotation.y = Math.atan2(toEnemy.x, toEnemy.z);
+          bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
         } else {
-          bot.mesh.rotation.y = Math.atan2(toTarget.x, toTarget.z);
+          // Face movement direction
+          bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
+        }
+      } else {
+        bot.isMoving = false;
+        // Still face enemy if in combat
+        if (enemyTarget && distToEnemy < 35) {
+          const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+          bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
         }
       }
 
@@ -1103,10 +1150,54 @@ export class Game {
       }
 
       bot.mesh.position.copy(bot.position);
+      
+      // Crouch visual
       const targetScale = bot.isCrouching ? 0.7 : 1.0;
       const currentScale = bot.mesh.scale.y;
       bot.mesh.scale.y = currentScale + (targetScale - currentScale) * 0.2;
       bot.mesh.position.y = bot.position.y + (bot.isCrouching ? -0.3 : 0);
+      
+      // Smooth rotation toward target direction
+      const yawDiff = bot.targetYaw - bot.currentYaw;
+      const normalizedDiff = Math.atan2(Math.sin(yawDiff), Math.cos(yawDiff));
+      bot.currentYaw += normalizedDiff * Math.min(dt * 8, 1);
+      bot.mesh.rotation.y = bot.currentYaw;
+      
+      // Walking animation
+      if (bot.isMoving && bot.grounded) {
+        bot.walkCycle += dt * (bot.isCrouching ? 6 : 10);
+        const swing = Math.sin(bot.walkCycle) * 0.5;
+        
+        // Leg swing
+        bot.leftLeg.rotation.x = swing;
+        bot.rightLeg.rotation.x = -swing;
+        
+        // Arm swing (opposite to legs)
+        bot.leftArm.rotation.x = -swing * 0.7;
+        bot.rightArm.rotation.x = swing * 0.7;
+        
+        // Slight body bob
+        const bob = Math.abs(Math.sin(bot.walkCycle * 2)) * 0.05;
+        bot.mesh.position.y += bob;
+      } else {
+        // Reset to idle pose
+        bot.leftLeg.rotation.x *= 0.9;
+        bot.rightLeg.rotation.x *= 0.9;
+        bot.leftArm.rotation.x *= 0.9;
+        bot.rightArm.rotation.x *= 0.9;
+      }
+      
+      // Head look at enemy when shooting
+      if (enemyTarget && distToEnemy < 40) {
+        const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+        const headYaw = Math.atan2(toEnemy.x, toEnemy.z) - bot.currentYaw;
+        const normalizedHeadYaw = Math.atan2(Math.sin(headYaw), Math.cos(headYaw));
+        // Clamp head rotation to ±60 degrees
+        const clampedHeadYaw = Math.max(-1.05, Math.min(1.05, normalizedHeadYaw));
+        bot.head.rotation.y = bot.head.rotation.y + (clampedHeadYaw - bot.head.rotation.y) * Math.min(dt * 5, 1);
+      } else {
+        bot.head.rotation.y *= 0.95;
+      }
     }
   }
 

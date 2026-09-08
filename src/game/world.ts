@@ -160,16 +160,43 @@ export class VoxelWorld {
     return disconnected.size;
   }
 
+  // Performance: Single InstancedMesh with per-instance colors
+  private instancedMesh: THREE.InstancedMesh | null = null;
+  private voxelIndexMap: Map<string, number> = new Map();
+  private static sharedGeometry: THREE.BoxGeometry | null = null;
+  private static sharedMaterial: THREE.MeshLambertMaterial | null = null;
+  
+  private getBaseColor(type: number): number {
+    const colors: Record<number, number> = {
+      [VOXEL_DIRT]: 0x8B6914,
+      [VOXEL_STONE]: 0x808080,
+      [VOXEL_GRASS]: 0x4a8c3f,
+      [VOXEL_BUILT]: 0xc4a35a,
+    };
+    return colors[type] || 0xffffff;
+  }
+  
+  private getColorWithDurability(type: number, durability: number): THREE.Color {
+    const baseColor = this.getBaseColor(type);
+    const factor = durability / 3;
+    const r = ((baseColor >> 16) & 0xFF) / 255 * factor;
+    const g = ((baseColor >> 8) & 0xFF) / 255 * factor;
+    const b = (baseColor & 0xFF) / 255 * factor;
+    return new THREE.Color(r, g, b);
+  }
+
   rebuildMesh(): void {
-    while (this.mesh.children.length > 0) {
-      const child = this.mesh.children[0];
-      this.mesh.remove(child);
-      if ((child as THREE.Mesh).geometry) (child as THREE.Mesh).geometry.dispose();
+    // Clean up old mesh
+    if (this.instancedMesh) {
+      this.mesh.remove(this.instancedMesh);
+      this.instancedMesh.dispose();
+      this.instancedMesh = null;
     }
+    this.voxelIndexMap.clear();
 
-    // Group by type and durability for built voxels
-    const groups: Map<string, THREE.Matrix4[]> = new Map();
-
+    // Collect exposed voxels
+    const positions: { x: number; y: number; z: number; type: number; durability: number }[] = [];
+    
     for (const [k, v] of this.voxels) {
       if (v.type === VOXEL_AIR) continue;
       const parts = k.split(',');
@@ -182,51 +209,63 @@ export class VoxelWorld {
         !this.isSolid(x, y, z + 1) || !this.isSolid(x, y, z - 1);
 
       if (!exposed) continue;
-
-      // Include durability in the group key for all voxel types
-      const groupKey = `${v.type}_${v.durability}`;
       
-      if (!groups.has(groupKey)) groups.set(groupKey, []);
-      const matrix = new THREE.Matrix4();
-      matrix.setPosition(x, y, z);
-      groups.get(groupKey)!.push(matrix);
+      positions.push({ x, y, z, type: v.type, durability: v.durability });
     }
 
-    const colors: Record<number, number> = {
-      [VOXEL_DIRT]: 0x8B6914,
-      [VOXEL_STONE]: 0x808080,
-      [VOXEL_GRASS]: 0x4a8c3f,
-      [VOXEL_BUILT]: 0xc4a35a,
-    };
+    if (positions.length === 0) return;
 
-    for (const [groupKey, matrices] of groups) {
-      if (matrices.length === 0) continue;
-      
-      const [typeStr, durabilityStr] = groupKey.split('_');
-      const type = parseInt(typeStr);
-      let color = colors[type] || 0xffffff;
-      
-      // Darken voxels based on durability (all types)
-      if (durabilityStr) {
-        const durability = parseInt(durabilityStr);
-        const darknessFactor = durability / 3; // 3 = full brightness, 1 = darkest
-        const r = ((color >> 16) & 0xFF) * darknessFactor;
-        const g = ((color >> 8) & 0xFF) * darknessFactor;
-        const b = (color & 0xFF) * darknessFactor;
-        color = (Math.floor(r) << 16) | (Math.floor(g) << 8) | Math.floor(b);
-      }
-      
-      const geo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
-      const mat = new THREE.MeshLambertMaterial({ color });
-      const instancedMesh = new THREE.InstancedMesh(geo, mat, matrices.length);
+    // Create shared geometry/material (reuse across rebuilds)
+    if (!VoxelWorld.sharedGeometry) {
+      VoxelWorld.sharedGeometry = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+    }
+    if (!VoxelWorld.sharedMaterial) {
+      VoxelWorld.sharedMaterial = new THREE.MeshLambertMaterial({ vertexColors: false });
+    }
 
-      for (let i = 0; i < matrices.length; i++) {
-        instancedMesh.setMatrixAt(i, matrices[i]);
-      }
-      instancedMesh.instanceMatrix.needsUpdate = true;
-      instancedMesh.castShadow = true;
-      instancedMesh.receiveShadow = true;
-      this.mesh.add(instancedMesh);
+    // Create single InstancedMesh with per-instance colors
+    this.instancedMesh = new THREE.InstancedMesh(
+      VoxelWorld.sharedGeometry,
+      VoxelWorld.sharedMaterial,
+      positions.length
+    );
+
+    const matrix = new THREE.Matrix4();
+    const color = new THREE.Color();
+
+    for (let i = 0; i < positions.length; i++) {
+      const p = positions[i];
+      matrix.setPosition(p.x, p.y, p.z);
+      this.instancedMesh.setMatrixAt(i, matrix);
+      
+      // Set per-instance color based on type and durability
+      color.copy(this.getColorWithDurability(p.type, p.durability));
+      this.instancedMesh.setColorAt(i, color);
+      
+      // Track index for fast updates
+      this.voxelIndexMap.set(this.key(p.x, p.y, p.z), i);
+    }
+
+    this.instancedMesh.instanceMatrix.needsUpdate = true;
+    if (this.instancedMesh.instanceColor) {
+      this.instancedMesh.instanceColor.needsUpdate = true;
+    }
+    this.instancedMesh.castShadow = false; // Disabled for performance
+    this.instancedMesh.receiveShadow = true;
+    this.mesh.add(this.instancedMesh);
+  }
+  
+  // Fast color update for damaged voxels (no full rebuild!)
+  updateVoxelColor(x: number, y: number, z: number, type: number, durability: number): void {
+    if (!this.instancedMesh) return;
+    const key = this.key(x, y, z);
+    const index = this.voxelIndexMap.get(key);
+    if (index === undefined) return;
+    
+    const color = this.getColorWithDurability(type, durability);
+    this.instancedMesh.setColorAt(index, color);
+    if (this.instancedMesh.instanceColor) {
+      this.instancedMesh.instanceColor.needsUpdate = true;
     }
   }
 
