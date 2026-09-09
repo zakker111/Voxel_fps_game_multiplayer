@@ -368,8 +368,7 @@ export class Game {
           const destroyed = this.world.damageVoxel(x, y, z, 1);
           
           if (destroyed) {
-            // Mark for rebuild (deferred to next frame)
-            this.world.markDirty();
+            // Chunk automatically marked dirty by setVoxel
             this.sounds.voxelBreak();
             this.showMessage('Voxel destroyed!');
             const collapsed = this.world.collapseDisconnected();
@@ -423,8 +422,7 @@ export class Game {
       const destroyed = this.world.damageVoxel(x, y, z, 1);
 
       if (destroyed) {
-        // Mark for rebuild (deferred to next frame)
-        this.world.markDirty();
+        // Chunk automatically marked dirty by setVoxel
         this.sounds.voxelBreak();
         this.inventory++;
         this.showMessage(`+1 voxel (Inventory: ${this.inventory})`);
@@ -466,7 +464,7 @@ export class Game {
         }
       }
       if (destroyed) {
-        this.world.markDirty();
+        // Chunk automatically marked dirty by setVoxel
         this.sounds.voxelBreak();
         const collapsed = this.world.collapseDisconnected();
         if (collapsed > 0) {
@@ -508,7 +506,7 @@ export class Game {
 
         this.world.setVoxel(px, py, pz, VOXEL_BUILT, 3);
         this.inventory--;
-        this.world.markDirty();
+        // Chunk automatically marked dirty by setVoxel
         this.sounds.buildPlace();
         this.showMessage(`Built! (Inventory: ${this.inventory})`);
       } else if (this.world.isSolid(px, py, pz)) {

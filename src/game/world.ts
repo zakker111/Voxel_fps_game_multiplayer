@@ -11,23 +11,42 @@ export const GROUND_LEVEL = 8;
 export const MAX_BUILD_UP = 20;
 export const MAX_DIG_DOWN = 20;
 export const VOXEL_SIZE = 1;
+export const CHUNK_SIZE = 16;
 
 export interface VoxelData {
   type: number;
   durability: number;
 }
 
+interface Chunk {
+  mesh: THREE.InstancedMesh | null;
+  dirty: boolean;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
 export class VoxelWorld {
   voxels: Map<string, VoxelData> = new Map();
   mesh: THREE.Group;
+  chunks: Map<string, Chunk> = new Map();
+  
+  private static sharedGeometry: THREE.BoxGeometry | null = null;
 
   constructor() {
     console.log('VoxelWorld constructor started');
     this.mesh = new THREE.Group();
+    
+    if (!VoxelWorld.sharedGeometry) {
+      VoxelWorld.sharedGeometry = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+    }
+    
     this.generateTerrain();
     console.log('Terrain generated, voxels:', this.voxels.size);
-    this.rebuildMesh();
-    console.log('Mesh rebuilt');
+    this.initializeChunks();
+    this.rebuildAllChunks();
+    console.log('All chunks rebuilt');
   }
 
   private key(x: number, y: number, z: number): string {
@@ -45,6 +64,8 @@ export class VoxelWorld {
     } else {
       this.voxels.set(k, { type, durability });
     }
+    // Mark chunk dirty
+    this.markChunkDirty(x, z);
   }
 
   isSolid(x: number, y: number, z: number): boolean {
@@ -98,6 +119,8 @@ export class VoxelWorld {
       this.setVoxel(x, y, z, VOXEL_AIR);
       return true;
     }
+    // Update color without full rebuild
+    this.updateVoxelColor(x, y, z, v.type, v.durability);
     return false;
   }
 
@@ -158,31 +181,71 @@ export class VoxelWorld {
       this.voxels.delete(k);
     }
     if (disconnected.size > 0) {
-      this.rebuildMesh();
+      // Mark all affected chunks dirty
+      for (const k of disconnected) {
+        const parts = k.split(',');
+        const x = parseInt(parts[0]);
+        const z = parseInt(parts[2]);
+        this.markChunkDirty(x, z);
+      }
     }
     return disconnected.size;
   }
 
-  // Performance: Single InstancedMesh with per-instance colors
-  private instancedMesh: THREE.InstancedMesh | null = null;
-  private voxelIndexMap: Map<string, number> = new Map();
-  private static sharedGeometry: THREE.BoxGeometry | null = null;
-  private static sharedMaterial: THREE.MeshLambertMaterial | null = null;
-  private needsRebuild: boolean = false;
-  
-  // Mark mesh as needing rebuild (deferred to next frame)
-  markDirty(): void {
-    this.needsRebuild = true;
+  // Chunk management
+  private getChunkKey(x: number, z: number): string {
+    const chunkX = Math.floor(x / CHUNK_SIZE);
+    const chunkZ = Math.floor(z / CHUNK_SIZE);
+    return `${chunkX},${chunkZ}`;
   }
-  
-  // Call once per frame to handle deferred rebuilds
-  update(): void {
-    if (this.needsRebuild) {
-      this.needsRebuild = false;
-      this.rebuildMesh();
+
+  private initializeChunks(): void {
+    const half = WORLD_SIZE / 2;
+    const minChunkX = Math.floor(-half / CHUNK_SIZE);
+    const maxChunkX = Math.floor(half / CHUNK_SIZE);
+    const minChunkZ = Math.floor(-half / CHUNK_SIZE);
+    const maxChunkZ = Math.floor(half / CHUNK_SIZE);
+
+    for (let cx = minChunkX; cx <= maxChunkX; cx++) {
+      for (let cz = minChunkZ; cz <= maxChunkZ; cz++) {
+        const key = `${cx},${cz}`;
+        this.chunks.set(key, {
+          mesh: null,
+          dirty: true,
+          minX: cx * CHUNK_SIZE,
+          maxX: (cx + 1) * CHUNK_SIZE - 1,
+          minZ: cz * CHUNK_SIZE,
+          maxZ: (cz + 1) * CHUNK_SIZE - 1,
+        });
+      }
     }
   }
-  
+
+  private markChunkDirty(x: number, z: number): void {
+    const key = this.getChunkKey(x, z);
+    const chunk = this.chunks.get(key);
+    if (chunk) {
+      chunk.dirty = true;
+    }
+
+    // Also mark neighboring chunks dirty if on edge
+    const localX = ((x % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const localZ = ((z % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+
+    if (localX === 0) this.markChunkDirtyByCoord(x - 1, z);
+    if (localX === CHUNK_SIZE - 1) this.markChunkDirtyByCoord(x + 1, z);
+    if (localZ === 0) this.markChunkDirtyByCoord(x, z - 1);
+    if (localZ === CHUNK_SIZE - 1) this.markChunkDirtyByCoord(x, z + 1);
+  }
+
+  private markChunkDirtyByCoord(x: number, z: number): void {
+    const key = this.getChunkKey(x, z);
+    const chunk = this.chunks.get(key);
+    if (chunk) {
+      chunk.dirty = true;
+    }
+  }
+
   private getBaseColor(type: number): number {
     const colors: Record<number, number> = {
       [VOXEL_DIRT]: 0x8B6914,
@@ -192,7 +255,7 @@ export class VoxelWorld {
     };
     return colors[type] || 0xffffff;
   }
-  
+
   private getColorWithDurability(type: number, durability: number): THREE.Color {
     const baseColor = this.getBaseColor(type);
     const factor = durability / 3;
@@ -202,18 +265,20 @@ export class VoxelWorld {
     return new THREE.Color(r, g, b);
   }
 
-  rebuildMesh(): void {
-    // Clean up old mesh
-    if (this.instancedMesh) {
-      this.mesh.remove(this.instancedMesh);
-      this.instancedMesh.dispose();
-      this.instancedMesh = null;
-    }
-    this.voxelIndexMap.clear();
+  private rebuildChunk(key: string): void {
+    const chunk = this.chunks.get(key);
+    if (!chunk) return;
 
-    // Collect exposed voxels
+    // Remove old mesh
+    if (chunk.mesh) {
+      this.mesh.remove(chunk.mesh);
+      chunk.mesh.dispose();
+      chunk.mesh = null;
+    }
+
+    // Collect exposed voxels in this chunk
     const positions: { x: number; y: number; z: number; type: number; durability: number }[] = [];
-    
+
     for (const [k, v] of this.voxels) {
       if (v.type === VOXEL_AIR) continue;
       const parts = k.split(',');
@@ -221,29 +286,24 @@ export class VoxelWorld {
       const y = parseInt(parts[1]);
       const z = parseInt(parts[2]);
 
+      // Check if voxel is in this chunk
+      if (x < chunk.minX || x > chunk.maxX || z < chunk.minZ || z > chunk.maxZ) continue;
+
       const exposed = !this.isSolid(x + 1, y, z) || !this.isSolid(x - 1, y, z) ||
         !this.isSolid(x, y + 1, z) || !this.isSolid(x, y - 1, z) ||
         !this.isSolid(x, y, z + 1) || !this.isSolid(x, y, z - 1);
 
       if (!exposed) continue;
-      
+
       positions.push({ x, y, z, type: v.type, durability: v.durability });
     }
 
     if (positions.length === 0) return;
 
-    // Create shared geometry/material (reuse across rebuilds)
-    if (!VoxelWorld.sharedGeometry) {
-      VoxelWorld.sharedGeometry = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
-    }
-    if (!VoxelWorld.sharedMaterial) {
-      VoxelWorld.sharedMaterial = new THREE.MeshLambertMaterial({ vertexColors: false });
-    }
-
-    // Create single InstancedMesh with per-instance colors
-    this.instancedMesh = new THREE.InstancedMesh(
-      VoxelWorld.sharedGeometry,
-      VoxelWorld.sharedMaterial,
+    // Create InstancedMesh for this chunk
+    const mesh = new THREE.InstancedMesh(
+      VoxelWorld.sharedGeometry!,
+      new THREE.MeshLambertMaterial({ vertexColors: false }),
       positions.length
     );
 
@@ -253,36 +313,50 @@ export class VoxelWorld {
     for (let i = 0; i < positions.length; i++) {
       const p = positions[i];
       matrix.setPosition(p.x, p.y, p.z);
-      this.instancedMesh.setMatrixAt(i, matrix);
-      
-      // Set per-instance color based on type and durability
+      mesh.setMatrixAt(i, matrix);
+
       color.copy(this.getColorWithDurability(p.type, p.durability));
-      this.instancedMesh.setColorAt(i, color);
-      
-      // Track index for fast updates
-      this.voxelIndexMap.set(this.key(p.x, p.y, p.z), i);
+      mesh.setColorAt(i, color);
     }
 
-    this.instancedMesh.instanceMatrix.needsUpdate = true;
-    if (this.instancedMesh.instanceColor) {
-      this.instancedMesh.instanceColor.needsUpdate = true;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) {
+      mesh.instanceColor.needsUpdate = true;
     }
-    this.instancedMesh.castShadow = false; // Disabled for performance
-    this.instancedMesh.receiveShadow = true;
-    this.mesh.add(this.instancedMesh);
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+
+    chunk.mesh = mesh;
+    this.mesh.add(mesh);
   }
-  
-  // Fast color update for damaged voxels (no full rebuild!)
+
+  private rebuildAllChunks(): void {
+    for (const [key, chunk] of this.chunks) {
+      this.rebuildChunk(key);
+      chunk.dirty = false;
+    }
+  }
+
   updateVoxelColor(x: number, y: number, z: number, type: number, durability: number): void {
-    if (!this.instancedMesh) return;
-    const key = this.key(x, y, z);
-    const index = this.voxelIndexMap.get(key);
-    if (index === undefined) return;
-    
-    const color = this.getColorWithDurability(type, durability);
-    this.instancedMesh.setColorAt(index, color);
-    if (this.instancedMesh.instanceColor) {
-      this.instancedMesh.instanceColor.needsUpdate = true;
+    const key = this.getChunkKey(x, z);
+    const chunk = this.chunks.get(key);
+    if (!chunk || !chunk.mesh) return;
+
+    // Find the voxel index in this chunk's mesh
+    // This is expensive, so we'll just mark the chunk dirty instead
+    chunk.dirty = true;
+  }
+
+  // Call once per frame to handle deferred rebuilds
+  update(): void {
+    // Only rebuild dirty chunks (max 2 per frame to spread load)
+    let rebuilt = 0;
+    for (const [key, chunk] of this.chunks) {
+      if (chunk.dirty && rebuilt < 2) {
+        this.rebuildChunk(key);
+        chunk.dirty = false;
+        rebuilt++;
+      }
     }
   }
 
