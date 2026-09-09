@@ -44,7 +44,8 @@ export class VoxelWorld {
       VoxelWorld.sharedGeometry = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
     }
     if (!VoxelWorld.sharedMaterial) {
-      VoxelWorld.sharedMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
+      // Use white material color so instance colors show through correctly
+      VoxelWorld.sharedMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
     }
     
     this.initializeChunks();
@@ -446,8 +447,20 @@ export class VoxelWorld {
     }
 
     mesh.instanceMatrix.needsUpdate = true;
+    // Force instance color buffer to be created and updated
     if (mesh.instanceColor) {
       mesh.instanceColor.needsUpdate = true;
+    } else {
+      // If instanceColor doesn't exist yet, we need to initialize it
+      const colors = new Float32Array(positions.length * 3);
+      for (let i = 0; i < positions.length; i++) {
+        const p = positions[i];
+        const c = this.getColorWithDurability(p.type, p.durability);
+        colors[i * 3] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+      }
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
     }
     mesh.castShadow = false;
     mesh.receiveShadow = true;
