@@ -116,9 +116,10 @@ export class Player {
   }
 
   private isPointInSolid(x: number, y: number, z: number): boolean {
-    const vx = Math.floor(x + 0.5);
-    const vy = Math.floor(y + 0.5);
-    const vz = Math.floor(z + 0.5);
+    // Voxels are centered at integer coordinates
+    const vx = Math.floor(x);
+    const vy = Math.floor(y);
+    const vz = Math.floor(z);
     return this.world.isSolid(vx, vy, vz);
   }
 
@@ -126,25 +127,76 @@ export class Player {
     const r = this.radius;
     const h = this.currentHeight;
 
+    // Check more points for better collision coverage
+    // Check at feet, middle, and head level
     const yChecks = [
-      pos.y + 0.05,
-      pos.y + h * 0.5,
-      pos.y + h - 0.05,
+      pos.y + 0.1,           // Just above feet
+      pos.y + h * 0.33,      // Lower third
+      pos.y + h * 0.66,      // Upper third
+      pos.y + h - 0.1,       // Just below head
     ];
 
     for (const cy of yChecks) {
+      // Check 9 points: center + 8 around the radius
       const points = [
-        [pos.x, pos.z],
-        [pos.x - r, pos.z - r],
-        [pos.x + r, pos.z - r],
-        [pos.x - r, pos.z + r],
-        [pos.x + r, pos.z + r],
+        [pos.x, pos.z],                    // Center
+        [pos.x - r, pos.z],                // Left
+        [pos.x + r, pos.z],                // Right
+        [pos.x, pos.z - r],                // Front
+        [pos.x, pos.z + r],                // Back
+        [pos.x - r * 0.7, pos.z - r * 0.7], // Diagonal corners
+        [pos.x + r * 0.7, pos.z - r * 0.7],
+        [pos.x - r * 0.7, pos.z + r * 0.7],
+        [pos.x + r * 0.7, pos.z + r * 0.7],
       ];
       for (const [cx, cz] of points) {
         if (this.isPointInSolid(cx, cy, cz)) return true;
       }
     }
     return false;
+  }
+
+  // Push player out of solid voxels if stuck
+  private pushOutOfSolids(pos: THREE.Vector3): THREE.Vector3 {
+    const result = pos.clone();
+    const r = this.radius;
+    const h = this.currentHeight;
+
+    // Check if player is currently inside a solid
+    if (!this.checkCollisionAt(result)) {
+      return result; // Not stuck, return as-is
+    }
+
+    // Try to push player out in each direction
+    const pushDistance = 0.1;
+    const directions = [
+      [pushDistance, 0, 0],
+      [-pushDistance, 0, 0],
+      [0, 0, pushDistance],
+      [0, 0, -pushDistance],
+      [0, pushDistance, 0],
+    ];
+
+    for (const [dx, dy, dz] of directions) {
+      const testPos = result.clone();
+      testPos.x += dx;
+      testPos.y += dy;
+      testPos.z += dz;
+      
+      if (!this.checkCollisionAt(testPos)) {
+        return testPos; // Found a non-colliding position
+      }
+    }
+
+    // If still stuck, move up until free
+    for (let i = 0; i < 10; i++) {
+      result.y += 0.5;
+      if (!this.checkCollisionAt(result)) {
+        return result;
+      }
+    }
+
+    return result;
   }
 
   private findGroundBelow(x: number, z: number): number {
@@ -159,6 +211,12 @@ export class Player {
       }
       this.updateCamera();
       return;
+    }
+
+    // First, check if player is stuck and push them out
+    if (this.checkCollisionAt(this.position)) {
+      const pushedPos = this.pushOutOfSolids(this.position);
+      this.position.copy(pushedPos);
     }
 
     const moveDir = new THREE.Vector3(0, 0, 0);
@@ -184,29 +242,35 @@ export class Player {
 
     const newPos = this.position.clone();
 
+    // Move X axis with collision detection
     newPos.x += this.velocity.x * dt;
     if (this.checkCollisionAt(newPos)) {
       newPos.x = this.position.x;
       this.velocity.x = 0;
     }
 
+    // Move Z axis with collision detection
     newPos.z += this.velocity.z * dt;
     if (this.checkCollisionAt(newPos)) {
       newPos.z = this.position.z;
       this.velocity.z = 0;
     }
 
+    // Move Y axis with collision detection
     newPos.y += this.velocity.y * dt;
     if (this.checkCollisionAt(newPos)) {
       if (this.velocity.y < 0) {
+        // Falling - snap to ground
         this.isGrounded = true;
         const groundY = this.findGroundBelow(newPos.x, newPos.z);
         newPos.y = groundY + 0.01;
       } else {
+        // Hit ceiling
         newPos.y = this.position.y;
       }
       this.velocity.y = 0;
     } else {
+      // Not colliding - check if we should snap to ground
       const groundY = this.findGroundBelow(newPos.x, newPos.z);
       if (this.velocity.y <= 0 && newPos.y - groundY < 0.15) {
         newPos.y = groundY + 0.01;
@@ -217,10 +281,17 @@ export class Player {
       }
     }
 
+    // Safety: if player falls too far, teleport to safe location
     if (newPos.y < -10) {
       const safeY = this.world.getGroundHeight(0, 0);
       newPos.set(0, safeY + 1, 0);
       this.velocity.set(0, 0, 0);
+    }
+
+    // Final check: if still colliding, push out again
+    if (this.checkCollisionAt(newPos)) {
+      const pushedPos = this.pushOutOfSolids(newPos);
+      newPos.copy(pushedPos);
     }
 
     this.position.copy(newPos);
