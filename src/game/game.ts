@@ -131,6 +131,7 @@ export class Game {
   };
 
   constructor(canvas: HTMLCanvasElement, mode: 'multiplayer' | 'singleplayer' = 'multiplayer') {
+    console.log('Game constructor called, mode:', mode);
     this.canvas = canvas;
     this.clock = new THREE.Clock();
     this.sounds = new SoundManager();
@@ -280,7 +281,12 @@ export class Game {
   }
 
   requestPointerLock(canvas: HTMLCanvasElement): void {
-    canvas.requestPointerLock();
+    console.log('Requesting pointer lock...');
+    canvas.requestPointerLock().then(() => {
+      console.log('Pointer lock acquired');
+    }).catch((err) => {
+      console.error('Pointer lock failed:', err);
+    });
   }
 
   private performAction(): void {
@@ -1247,6 +1253,7 @@ export class Game {
   }
 
   start(): void {
+    console.log('Game starting...');
     this.animate();
   }
 

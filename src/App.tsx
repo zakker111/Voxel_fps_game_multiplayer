@@ -15,21 +15,35 @@ function App() {
 
   useEffect(() => {
     if (!canvasRef.current || gameRef.current || !gameMode) return;
-    const game = new Game(canvasRef.current, gameMode);
+    
+    const canvas = canvasRef.current;
+    console.log('Creating game with mode:', gameMode, 'canvas size:', canvas.width, canvas.height);
+    
+    // Ensure canvas has dimensions
+    if (canvas.width === 0 || canvas.height === 0) {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    
+    const game = new Game(canvas, gameMode);
     game.onStateChange = (state) => setGameState(state);
     game.start();
     gameRef.current = game;
-    return () => { game.destroy(); };
+    console.log('Game created and started');
+    
+    // Auto-start when game is created
+    game.requestPointerLock(canvas);
+    setStarted(true);
+    
+    return () => { 
+      console.log('Cleaning up game');
+      game.destroy(); 
+      gameRef.current = null;
+    };
   }, [gameMode]);
 
   const handleStart = (mode: 'multiplayer' | 'singleplayer') => {
     setGameMode(mode);
-    setTimeout(() => {
-      if (canvasRef.current && gameRef.current) {
-        gameRef.current.requestPointerLock(canvasRef.current);
-        setStarted(true);
-      }
-    }, 100);
   };
 
   const handleCanvasClick = () => {
@@ -52,7 +66,7 @@ function App() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-black">
-      <canvas ref={canvasRef} className="w-full h-full" onClick={handleCanvasClick} onContextMenu={handleRightClick} />
+      <canvas ref={canvasRef} className="w-full h-full block" onClick={handleCanvasClick} onContextMenu={handleRightClick} />
 
       {!started && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-50">

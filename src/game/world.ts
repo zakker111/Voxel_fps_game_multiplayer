@@ -22,9 +22,12 @@ export class VoxelWorld {
   mesh: THREE.Group;
 
   constructor() {
+    console.log('VoxelWorld constructor started');
     this.mesh = new THREE.Group();
     this.generateTerrain();
+    console.log('Terrain generated, voxels:', this.voxels.size);
     this.rebuildMesh();
+    console.log('Mesh rebuilt');
   }
 
   private key(x: number, y: number, z: number): string {
