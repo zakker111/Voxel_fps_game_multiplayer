@@ -41,7 +41,7 @@ interface Bot {
   nameTag: THREE.Sprite;
   isCrouching: boolean;
   crouchTimer: number;
-  behaviorState: 'patrol' | 'engage' | 'strafe' | 'crouch' | 'peek' | 'capture';
+  behaviorState: 'patrol' | 'engage' | 'strafe' | 'crouch' | 'peek' | 'capture' | 'retreat' | 'flank' | 'jumpdodge';
   behaviorTimer: number;
   strafeDirection: number;
   stuckTimer: number;
@@ -56,6 +56,12 @@ interface Bot {
   isMoving: boolean;
   targetYaw: number;
   currentYaw: number;
+  // New AI fields
+  jumpCooldown: number;
+  skill: number; // 0-1, affects accuracy and reaction time
+  aggression: number; // 0-1, how aggressive the bot is
+  lastDamageTime: number;
+  dodgeTimer: number;
 }
 
 interface Weapon {
@@ -393,6 +399,10 @@ export class Game {
       closestBot.hp -= dmg;
       this.hitMarkerTimer = 0.2;
       this.sounds.hitMarker();
+      
+      // Trigger dodge behavior
+      closestBot.lastDamageTime = performance.now() / 1000;
+      closestBot.dodgeTimer = 0.5;
 
       if (closestBot.hp <= 0) {
         closestBot.isDead = true;
@@ -594,6 +604,12 @@ export class Game {
         strafeDirection: Math.random() > 0.5 ? 1 : -1,
         stuckTimer: 0,
         lastPos: pos.clone(),
+        // New AI fields
+        jumpCooldown: 0,
+        skill: 0.5 + Math.random() * 0.5, // 0.5-1.0 skill level
+        aggression: 0.4 + Math.random() * 0.6, // 0.4-1.0 aggression
+        lastDamageTime: 0,
+        dodgeTimer: 0,
       });
     }
   }
@@ -942,12 +958,18 @@ export class Game {
           bot.velocity.set(0, 0, 0);
           bot.isCrouching = false;
           bot.behaviorState = 'patrol';
+          bot.jumpCooldown = 0;
         }
         continue;
       }
 
       const enemyTarget = this.findNearestEnemy(bot);
       const distToEnemy = enemyTarget ? bot.position.distanceTo(enemyTarget.pos) : Infinity;
+      const hpPercent = bot.hp / bot.maxHp;
+
+      // Update cooldowns
+      bot.jumpCooldown = Math.max(0, bot.jumpCooldown - dt);
+      bot.dodgeTimer = Math.max(0, bot.dodgeTimer - dt);
 
       // Detect stuck
       const moveDist = bot.position.distanceTo(bot.lastPos);
@@ -958,8 +980,12 @@ export class Game {
       }
       bot.lastPos.copy(bot.position);
 
-      if (bot.stuckTimer > 1.5) {
-        // Force new target when stuck
+      if (bot.stuckTimer > 1.0) {
+        // Jump when stuck
+        if (bot.grounded && bot.jumpCooldown <= 0) {
+          bot.velocity.y = 8;
+          bot.jumpCooldown = 2;
+        }
         bot.stuckTimer = 0;
         bot.behaviorState = 'capture';
         bot.moveTimer = 0;
@@ -968,49 +994,85 @@ export class Game {
       bot.behaviorTimer -= dt;
       bot.moveTimer -= dt;
 
+      // SMART DECISION MAKING
       if (bot.behaviorTimer <= 0) {
-        bot.behaviorTimer = 2 + Math.random() * 3;
+        bot.behaviorTimer = 1.5 + Math.random() * 2;
 
-        if (enemyTarget && distToEnemy < 12) {
+        // RETREAT when low HP
+        if (hpPercent < 0.3 && enemyTarget && distToEnemy < 20) {
+          bot.behaviorState = 'retreat';
+          bot.behaviorTimer = 2 + Math.random() * 2;
+        }
+        // JUMP DODGE when being shot at
+        else if (bot.dodgeTimer > 0 && bot.grounded && bot.jumpCooldown <= 0) {
+          bot.behaviorState = 'jumpdodge';
+          bot.behaviorTimer = 0.5;
+        }
+        // COMBAT BEHAVIORS
+        else if (enemyTarget && distToEnemy < 15) {
           const roll = Math.random();
-          if (roll < 0.4) {
+          if (roll < 0.5 * bot.aggression) {
+            // Aggressive strafing
             bot.behaviorState = 'strafe';
             bot.strafeDirection = Math.random() > 0.5 ? 1 : -1;
+            bot.behaviorTimer = 1 + Math.random() * 2;
           } else if (roll < 0.7) {
-            bot.behaviorState = 'crouch';
-            bot.crouchTimer = 1 + Math.random() * 2;
-          } else {
+            // Flank the enemy
+            bot.behaviorState = 'flank';
+            bot.behaviorTimer = 2 + Math.random() * 2;
+          } else if (roll < 0.85) {
+            // Quick peek
             bot.behaviorState = 'peek';
-            bot.crouchTimer = 0.5 + Math.random() * 1;
+            bot.crouchTimer = 0.3 + Math.random() * 0.5;
+            bot.behaviorTimer = 0.5 + Math.random() * 0.5;
+          } else {
+            // Jump and strafe
+            bot.behaviorState = 'jumpdodge';
+            bot.behaviorTimer = 0.8;
           }
-        } else if (enemyTarget && distToEnemy < 30) {
+        }
+        // MEDIUM RANGE
+        else if (enemyTarget && distToEnemy < 35) {
           const roll = Math.random();
-          if (roll < 0.5) {
+          if (roll < 0.4 * bot.aggression) {
+            // Engage aggressively
             bot.behaviorState = 'engage';
-          } else if (roll < 0.8) {
+            bot.behaviorTimer = 1.5 + Math.random() * 2;
+          } else if (roll < 0.7) {
+            // Strafe and shoot
             bot.behaviorState = 'strafe';
             bot.strafeDirection = Math.random() > 0.5 ? 1 : -1;
+            bot.behaviorTimer = 2 + Math.random() * 2;
+          } else if (roll < 0.85) {
+            // Flank
+            bot.behaviorState = 'flank';
+            bot.behaviorTimer = 2 + Math.random() * 3;
           } else {
-            bot.behaviorState = 'crouch';
-            bot.crouchTimer = 1 + Math.random() * 1.5;
+            // Capture objective
+            bot.behaviorState = 'capture';
+            bot.behaviorTimer = 3 + Math.random() * 2;
           }
-        } else {
+        }
+        // NO ENEMY - CAPTURE OBJECTIVE
+        else {
           bot.behaviorState = 'capture';
+          bot.behaviorTimer = 3 + Math.random() * 3;
         }
       }
 
+      // EXECUTE BEHAVIOR
       switch (bot.behaviorState) {
         case 'patrol':
         case 'capture': {
           bot.isCrouching = false;
           if (bot.moveTimer <= 0) {
-            bot.moveTimer = 2 + Math.random() * 3;
+            bot.moveTimer = 1.5 + Math.random() * 2;
             const flagPos = bot.team === 'blue' ? RED_FLAG_POS : BLUE_FLAG_POS;
-            const offset = bot.behaviorState === 'capture' ? 0.5 : 0;
+            const offset = bot.behaviorState === 'capture' ? 0.3 : 0;
             bot.targetPos.set(
-              flagPos.x + (Math.random() - 0.5) * 30 * (1 - offset),
+              flagPos.x + (Math.random() - 0.5) * 40 * (1 - offset),
               bot.position.y,
-              flagPos.z + (Math.random() - 0.5) * 20 * (1 - offset)
+              flagPos.z + (Math.random() - 0.5) * 30 * (1 - offset)
             );
           }
           break;
@@ -1018,7 +1080,7 @@ export class Game {
 
         case 'engage':
           bot.isCrouching = false;
-          if (enemyTarget && distToEnemy > 8) {
+          if (enemyTarget && distToEnemy > 6) {
             bot.targetPos.copy(enemyTarget.pos);
           }
           break;
@@ -1030,41 +1092,94 @@ export class Game {
             const perpX = -toEnemy.z * bot.strafeDirection;
             const perpZ = toEnemy.x * bot.strafeDirection;
             bot.targetPos.set(
-              bot.position.x + perpX * 0.5,
+              bot.position.x + perpX * 0.8,
               bot.position.y,
-              bot.position.z + perpZ * 0.5
+              bot.position.z + perpZ * 0.8
+            );
+            // Jump while strafing sometimes
+            if (bot.grounded && bot.jumpCooldown <= 0 && Math.random() < 0.02) {
+              bot.velocity.y = 7;
+              bot.jumpCooldown = 1.5;
+            }
+          }
+          break;
+
+        case 'flank':
+          bot.isCrouching = false;
+          if (enemyTarget) {
+            // Move to side of enemy
+            const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+            const flankAngle = Math.PI / 2 * (bot.strafeDirection > 0 ? 1 : -1);
+            const flankX = Math.cos(flankAngle) * toEnemy.x - Math.sin(flankAngle) * toEnemy.z;
+            const flankZ = Math.sin(flankAngle) * toEnemy.x + Math.cos(flankAngle) * toEnemy.z;
+            bot.targetPos.set(
+              enemyTarget.pos.x + flankX * 0.5,
+              bot.position.y,
+              enemyTarget.pos.z + flankZ * 0.5
             );
           }
           break;
 
-        case 'crouch':
-          bot.isCrouching = true;
-          bot.crouchTimer -= dt;
-          if (bot.crouchTimer <= 0) {
-            bot.behaviorState = 'capture';
-            bot.isCrouching = false;
+        case 'retreat':
+          bot.isCrouching = false;
+          if (enemyTarget) {
+            // Move away from enemy
+            const awayFromEnemy = bot.position.clone().sub(enemyTarget.pos).normalize();
+            bot.targetPos.set(
+              bot.position.x + awayFromEnemy.x * 10,
+              bot.position.y,
+              bot.position.z + awayFromEnemy.z * 10
+            );
+            // Jump while retreating
+            if (bot.grounded && bot.jumpCooldown <= 0 && Math.random() < 0.03) {
+              bot.velocity.y = 8;
+              bot.jumpCooldown = 1.5;
+            }
           }
-          bot.targetPos.copy(bot.position);
           break;
 
         case 'peek':
           bot.crouchTimer -= dt;
-          bot.isCrouching = bot.crouchTimer > 0.3;
+          bot.isCrouching = bot.crouchTimer > 0.2;
           if (bot.crouchTimer <= 0) {
             bot.behaviorState = 'strafe';
             bot.isCrouching = false;
+            bot.strafeDirection = Math.random() > 0.5 ? 1 : -1;
           }
           bot.targetPos.copy(bot.position);
           break;
+
+        case 'jumpdodge':
+          bot.isCrouching = false;
+          bot.dodgeTimer = 0;
+          if (enemyTarget) {
+            // Dodge perpendicular to enemy
+            const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+            const dodgeX = -toEnemy.z * (Math.random() > 0.5 ? 1 : -1);
+            const dodgeZ = toEnemy.x * (Math.random() > 0.5 ? 1 : -1);
+            bot.targetPos.set(
+              bot.position.x + dodgeX * 0.5,
+              bot.position.y,
+              bot.position.z + dodgeZ * 0.5
+            );
+            // Jump!
+            if (bot.grounded && bot.jumpCooldown <= 0) {
+              bot.velocity.y = 9;
+              bot.jumpCooldown = 1;
+            }
+          }
+          break;
       }
 
+      // MOVEMENT
       const toTarget = bot.targetPos.clone().sub(bot.position);
       toTarget.y = 0;
       const distToTarget = toTarget.length();
       
       if (distToTarget > 0.5) {
         toTarget.normalize();
-        const speed = bot.isCrouching ? 3 : 6;
+        // FASTER SPEED: 10 units/sec normal, 5 when crouching
+        const speed = bot.isCrouching ? 5 : 10;
         const newX = bot.position.x + toTarget.x * speed * dt;
         const newZ = bot.position.z + toTarget.z * speed * dt;
 
@@ -1072,29 +1187,32 @@ export class Game {
         
         if (this.botCanMoveTo(newX, bot.position.z, bot.position.y)) {
           bot.position.x = newX;
+        } else if (bot.grounded && bot.jumpCooldown <= 0) {
+          // Jump over obstacle
+          bot.velocity.y = 8;
+          bot.jumpCooldown = 1.5;
         }
+        
         if (this.botCanMoveTo(bot.position.x, newZ, bot.position.y)) {
           bot.position.z = newZ;
         }
 
         // Set target yaw based on situation
-        if (enemyTarget && distToEnemy < 35) {
-          // Face enemy when in combat range
+        if (enemyTarget && distToEnemy < 40) {
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
           bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
         } else {
-          // Face movement direction
           bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
         }
       } else {
         bot.isMoving = false;
-        // Still face enemy if in combat
-        if (enemyTarget && distToEnemy < 35) {
+        if (enemyTarget && distToEnemy < 40) {
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
           bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
         }
       }
 
+      // GRAVITY & GROUND
       const groundY = this.world.getGroundHeight(bot.position.x, bot.position.z);
       if (bot.position.y > groundY + 0.1) {
         bot.velocity.y -= 20 * dt;
@@ -1117,32 +1235,53 @@ export class Game {
         continue;
       }
 
+      // SHOOTING - MUCH BETTER ACCURACY
       bot.shootTimer -= dt;
       if (bot.shootTimer <= 0 && enemyTarget) {
         const dist = bot.position.distanceTo(enemyTarget.pos);
         if (dist < 50) {
-          bot.shootTimer = 1.0 + Math.random() * 2.5;
+          // Faster shooting, better accuracy
+          bot.shootTimer = 0.6 + Math.random() * 1.5;
 
-          let accuracy = 0.15;
-          if (bot.isCrouching) accuracy *= 1.3;
-          if (dist < 20) accuracy *= 1.2;
-          if (dist > 35) accuracy *= 0.7;
+          // Base accuracy: 25% (up from 15%)
+          let accuracy = 0.25;
+          
+          // Skill modifier
+          accuracy *= (0.7 + bot.skill * 0.6); // 0.7-1.3x based on skill
+          
+          // Crouching bonus
+          if (bot.isCrouching) accuracy *= 1.4;
+          
+          // Distance modifiers
+          if (dist < 15) accuracy *= 1.3; // Close range bonus
+          else if (dist < 25) accuracy *= 1.1; // Medium range
+          else if (dist > 40) accuracy *= 0.7; // Long range penalty
+          
+          // Movement penalty
+          if (bot.isMoving && !bot.grounded) accuracy *= 0.6; // Jumping penalty
+          else if (bot.isMoving) accuracy *= 0.85; // Moving penalty
 
           const willHit = Math.random() < accuracy;
 
           if (willHit && enemyTarget.isPlayer) {
-            const isHeadshot = Math.random() < 0.2;
+            const isHeadshot = Math.random() < 0.25; // 25% headshot chance
             const damage = isHeadshot ? 100 : 34;
             this.player.takeDamage(damage);
+            // Mark player as recently damaged for dodge behavior
+            if (this.player) {
+              // We can't directly set lastDamageTime on player, but we track it
+            }
             if (this.player.isDead) {
               this.redKills++;
               this.sounds.death();
               this.showMessage('You were eliminated by ' + TEAM_COLORS[bot.team].label + ' team!');
             }
           } else if (willHit && enemyTarget.bot) {
-            const isHeadshot = Math.random() < 0.2;
+            const isHeadshot = Math.random() < 0.25;
             const damage = isHeadshot ? 100 : 34;
             enemyTarget.bot.hp -= damage;
+            enemyTarget.bot.lastDamageTime = performance.now() / 1000;
+            enemyTarget.bot.dodgeTimer = 0.5; // Trigger dodge
             if (enemyTarget.bot.hp <= 0) {
               enemyTarget.bot.isDead = true;
               enemyTarget.bot.respawnTimer = 8;
@@ -1152,10 +1291,11 @@ export class Game {
             }
           }
         } else {
-          bot.shootTimer = 0.5;
+          bot.shootTimer = 0.3;
         }
       }
 
+      // VISUAL UPDATES
       bot.mesh.position.copy(bot.position);
       
       // Crouch visual
@@ -1164,44 +1304,38 @@ export class Game {
       bot.mesh.scale.y = currentScale + (targetScale - currentScale) * 0.2;
       bot.mesh.position.y = bot.position.y + (bot.isCrouching ? -0.3 : 0);
       
-      // Smooth rotation toward target direction
+      // Smooth rotation
       const yawDiff = bot.targetYaw - bot.currentYaw;
       const normalizedDiff = Math.atan2(Math.sin(yawDiff), Math.cos(yawDiff));
-      bot.currentYaw += normalizedDiff * Math.min(dt * 8, 1);
+      bot.currentYaw += normalizedDiff * Math.min(dt * 10, 1); // Faster rotation
       bot.mesh.rotation.y = bot.currentYaw;
       
       // Walking animation
       if (bot.isMoving && bot.grounded) {
-        bot.walkCycle += dt * (bot.isCrouching ? 6 : 10);
-        const swing = Math.sin(bot.walkCycle) * 0.5;
+        bot.walkCycle += dt * (bot.isCrouching ? 8 : 12); // Faster animation
+        const swing = Math.sin(bot.walkCycle) * 0.6; // Bigger swing
         
-        // Leg swing
         bot.leftLeg.rotation.x = swing;
         bot.rightLeg.rotation.x = -swing;
+        bot.leftArm.rotation.x = -swing * 0.8;
+        bot.rightArm.rotation.x = swing * 0.8;
         
-        // Arm swing (opposite to legs)
-        bot.leftArm.rotation.x = -swing * 0.7;
-        bot.rightArm.rotation.x = swing * 0.7;
-        
-        // Slight body bob
-        const bob = Math.abs(Math.sin(bot.walkCycle * 2)) * 0.05;
+        const bob = Math.abs(Math.sin(bot.walkCycle * 2)) * 0.08;
         bot.mesh.position.y += bob;
       } else {
-        // Reset to idle pose
         bot.leftLeg.rotation.x *= 0.9;
         bot.rightLeg.rotation.x *= 0.9;
         bot.leftArm.rotation.x *= 0.9;
         bot.rightArm.rotation.x *= 0.9;
       }
       
-      // Head look at enemy when shooting
-      if (enemyTarget && distToEnemy < 40) {
+      // Head tracking
+      if (enemyTarget && distToEnemy < 45) {
         const toEnemy = enemyTarget.pos.clone().sub(bot.position);
         const headYaw = Math.atan2(toEnemy.x, toEnemy.z) - bot.currentYaw;
         const normalizedHeadYaw = Math.atan2(Math.sin(headYaw), Math.cos(headYaw));
-        // Clamp head rotation to ±60 degrees
         const clampedHeadYaw = Math.max(-1.05, Math.min(1.05, normalizedHeadYaw));
-        bot.head.rotation.y = bot.head.rotation.y + (clampedHeadYaw - bot.head.rotation.y) * Math.min(dt * 5, 1);
+        bot.head.rotation.y = bot.head.rotation.y + (clampedHeadYaw - bot.head.rotation.y) * Math.min(dt * 8, 1);
       } else {
         bot.head.rotation.y *= 0.95;
       }
