@@ -32,7 +32,7 @@ export class Player {
   constructor(world: VoxelWorld) {
     this.world = world;
     const groundY = world.getGroundHeight(0, 0);
-    this.position = new THREE.Vector3(0, groundY + 0.1, 0);
+    this.position = new THREE.Vector3(0, groundY, 0);
     this.velocity = new THREE.Vector3(0, 0, 0);
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
     this.updateCamera();
@@ -109,7 +109,7 @@ export class Player {
     const spawnX = (Math.random() - 0.5) * 20;
     const spawnZ = (Math.random() - 0.5) * 20;
     const groundY = this.world.getGroundHeight(spawnX, spawnZ);
-    this.position.set(spawnX, groundY + 0.1, spawnZ);
+    this.position.set(spawnX, groundY, spawnZ);
     this.velocity.set(0, 0, 0);
     this.yaw = 0;
     this.pitch = 0;
@@ -127,12 +127,11 @@ export class Player {
     const r = this.radius;
     const h = this.currentHeight;
 
-    // Check more points for better collision coverage
     // Check at feet, middle, and head level
+    // Use actual feet position (pos.y) not offset
     const yChecks = [
-      pos.y + 0.1,           // Just above feet
-      pos.y + h * 0.33,      // Lower third
-      pos.y + h * 0.66,      // Upper third
+      pos.y,                 // At feet level
+      pos.y + h * 0.5,       // Middle
       pos.y + h - 0.1,       // Just below head
     ];
 
@@ -152,6 +151,26 @@ export class Player {
       for (const [cx, cz] of points) {
         if (this.isPointInSolid(cx, cy, cz)) return true;
       }
+    }
+    return false;
+  }
+
+  // Check if player is standing on ground (feet touching solid)
+  private isOnGround(pos: THREE.Vector3): boolean {
+    const r = this.radius;
+    // Check just below feet
+    const belowY = pos.y - 0.05;
+    
+    const points = [
+      [pos.x, pos.z],
+      [pos.x - r, pos.z],
+      [pos.x + r, pos.z],
+      [pos.x, pos.z - r],
+      [pos.x, pos.z + r],
+    ];
+    
+    for (const [cx, cz] of points) {
+      if (this.isPointInSolid(cx, belowY, cz)) return true;
     }
     return false;
   }
@@ -237,8 +256,17 @@ export class Player {
     this.velocity.x = moveDir.x * speed;
     this.velocity.z = moveDir.z * speed;
 
-    this.velocity.y -= this.gravity * dt;
-    if (this.velocity.y < -30) this.velocity.y = -30;
+    // Check if on ground BEFORE applying gravity
+    this.isGrounded = this.isOnGround(this.position);
+
+    // Only apply gravity if not grounded
+    if (!this.isGrounded) {
+      this.velocity.y -= this.gravity * dt;
+      if (this.velocity.y < -30) this.velocity.y = -30;
+    } else {
+      // Reset vertical velocity when on ground
+      this.velocity.y = 0;
+    }
 
     const newPos = this.position.clone();
 
@@ -260,31 +288,21 @@ export class Player {
     newPos.y += this.velocity.y * dt;
     if (this.checkCollisionAt(newPos)) {
       if (this.velocity.y < 0) {
-        // Falling - snap to ground
+        // Falling and hit something - snap to ground
         this.isGrounded = true;
         const groundY = this.findGroundBelow(newPos.x, newPos.z);
-        newPos.y = groundY + 0.01;
+        newPos.y = groundY;
       } else {
         // Hit ceiling
         newPos.y = this.position.y;
       }
       this.velocity.y = 0;
-    } else {
-      // Not colliding - check if we should snap to ground
-      const groundY = this.findGroundBelow(newPos.x, newPos.z);
-      if (this.velocity.y <= 0 && newPos.y - groundY < 0.15) {
-        newPos.y = groundY + 0.01;
-        this.velocity.y = 0;
-        this.isGrounded = true;
-      } else {
-        this.isGrounded = false;
-      }
     }
 
     // Safety: if player falls too far, teleport to safe location
     if (newPos.y < -10) {
       const safeY = this.world.getGroundHeight(0, 0);
-      newPos.set(0, safeY + 1, 0);
+      newPos.set(0, safeY, 0);
       this.velocity.set(0, 0, 0);
     }
 
