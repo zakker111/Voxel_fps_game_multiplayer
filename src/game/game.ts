@@ -365,16 +365,15 @@ export class Game {
         if (voxel) {
           const { x, y, z } = voxelHit.voxelPos;
           // Damage any voxel (not just built ones)
-          const destroyed = this.world.damageVoxel(x, y, z, 1);
+          const result = this.world.damageVoxel(x, y, z, 1);
           
-          if (destroyed) {
+          if (result.destroyed) {
             // Chunk automatically marked dirty by setVoxel
             this.sounds.voxelBreak();
             this.showMessage('Voxel destroyed!');
-            const collapsed = this.world.collapseDisconnected();
-            if (collapsed > 0) {
+            if (result.collapsed > 0) {
               this.sounds.collapse();
-              this.showMessage(`Structure collapsed! (${collapsed} voxels)`);
+              this.showMessage(`Structure collapsed! (${result.collapsed} voxels)`);
             }
           } else {
             // Fast color update (no rebuild!)
@@ -419,17 +418,16 @@ export class Game {
 
     if (hit && this.world.canDig(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z)) {
       const { x, y, z } = hit.voxelPos;
-      const destroyed = this.world.damageVoxel(x, y, z, 1);
+      const result = this.world.damageVoxel(x, y, z, 1);
 
-      if (destroyed) {
+      if (result.destroyed) {
         // Chunk automatically marked dirty by setVoxel
         this.sounds.voxelBreak();
         this.inventory++;
         this.showMessage(`+1 voxel (Inventory: ${this.inventory})`);
-        const collapsed = this.world.collapseDisconnected();
-        if (collapsed > 0) {
+        if (result.collapsed > 0) {
           this.sounds.collapse();
-          this.showMessage(`Structure collapsed! (${collapsed} voxels)`);
+          this.showMessage(`Structure collapsed! (${result.collapsed} voxels)`);
         }
       } else {
         // Fast color update (no rebuild!)
@@ -454,22 +452,26 @@ export class Game {
     const hit = this.world.raycast(origin, dir, 5);
 
     if (hit) {
-      let destroyed = false;
+      let totalCollapsed = 0;
+      let anyDestroyed = false;
       for (let i = 0; i < 2; i++) {
         const vx = hit.voxelPos.x + Math.round(hit.normal.x) * i;
         const vy = hit.voxelPos.y + Math.round(hit.normal.y) * i;
         const vz = hit.voxelPos.z + Math.round(hit.normal.z) * i;
         if (this.world.canDig(vx, vy, vz)) {
-          if (this.world.damageVoxel(vx, vy, vz, 3)) destroyed = true; // Spade destroys instantly
+          const result = this.world.damageVoxel(vx, vy, vz, 3); // Spade destroys instantly
+          if (result.destroyed) {
+            anyDestroyed = true;
+            totalCollapsed += result.collapsed;
+          }
         }
       }
-      if (destroyed) {
+      if (anyDestroyed) {
         // Chunk automatically marked dirty by setVoxel
         this.sounds.voxelBreak();
-        const collapsed = this.world.collapseDisconnected();
-        if (collapsed > 0) {
+        if (totalCollapsed > 0) {
           this.sounds.collapse();
-          this.showMessage(`Structure collapsed! (${collapsed} voxels)`);
+          this.showMessage(`Structure collapsed! (${totalCollapsed} voxels)`);
         }
       }
     }

@@ -184,30 +184,175 @@ export class VoxelWorld {
   }
 
   canBuild(x: number, y: number, z: number): boolean {
-    return y <= GROUND_LEVEL + MAX_BUILD_UP;
+    // Check if within build height limit
+    if (y > GROUND_LEVEL + MAX_BUILD_UP) {
+      return false;
+    }
+
+    // Check if position is already occupied
+    if (this.isSolid(x, y, z)) {
+      return false;
+    }
+
+    // Check if this is a "built" voxel (not natural terrain)
+    // Built voxels need support within 12 blocks
+    if (y > GROUND_LEVEL) {
+      // Check if there's support below or within 12 blocks
+      if (!this.hasSupport(x, y, z, 12)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
-  damageVoxel(x: number, y: number, z: number, damage: number): boolean {
+  damageVoxel(x: number, y: number, z: number, damage: number): { destroyed: boolean; collapsed: number } {
     const v = this.getVoxel(x, y, z);
-    if (!v) return false;
+    if (!v) return { destroyed: false, collapsed: 0 };
     
     v.durability -= damage;
     
     if (v.durability <= 0) {
       this.setVoxel(x, y, z, VOXEL_AIR);
-      return true;
+      // Pass coordinates for localized collapse detection
+      const collapsed = this.collapseDisconnected(x, y, z);
+      return { destroyed: true, collapsed };
     }
     
     // Fast color update without rebuild
     this.updateVoxelColor(x, y, z, v.type, v.durability);
+    return { destroyed: false, collapsed: 0 };
+  }
+
+  // Localized collapse check - only checks neighbors of destroyed voxel
+  collapseDisconnected(destroyedX?: number, destroyedY?: number, destroyedZ?: number): number {
+    if (destroyedX === undefined || destroyedY === undefined || destroyedZ === undefined) {
+      return 0;
+    }
+
+    const toCollapse: string[] = [];
+    const checked = new Set<string>();
+    
+    // Check all 6 neighbors of the destroyed voxel
+    const neighbors = [
+      [destroyedX + 1, destroyedY, destroyedZ],
+      [destroyedX - 1, destroyedY, destroyedZ],
+      [destroyedX, destroyedY + 1, destroyedZ],
+      [destroyedX, destroyedY - 1, destroyedZ],
+      [destroyedX, destroyedY, destroyedZ + 1],
+      [destroyedX, destroyedY, destroyedZ - 1],
+    ];
+
+    for (const [nx, ny, nz] of neighbors) {
+      const voxel = this.getVoxel(nx, ny, nz);
+      if (!voxel || voxel.type === VOXEL_AIR) continue;
+      
+      const key = this.key(nx, ny, nz);
+      if (checked.has(key)) continue;
+      
+      // Check if this voxel has support (path to ground within 12 blocks)
+      if (!this.hasSupport(nx, ny, nz, 12)) {
+        // This voxel and all connected voxels without support should collapse
+        this.findUnsupportedChain(nx, ny, nz, toCollapse, checked);
+      }
+    }
+
+    // Remove all unsupported voxels
+    for (const key of toCollapse) {
+      const parts = key.split(',');
+      const x = parseInt(parts[0]);
+      const y = parseInt(parts[1]);
+      const z = parseInt(parts[2]);
+      this.setVoxel(x, y, z, VOXEL_AIR);
+    }
+
+    return toCollapse.length;
+  }
+
+  // Check if a voxel has support (path to ground within maxDistance blocks)
+  private hasSupport(x: number, y: number, z: number, maxDistance: number): boolean {
+    const visited = new Set<string>();
+    const queue: Array<{x: number, y: number, z: number, dist: number}> = [];
+    
+    queue.push({x, y, z, dist: 0});
+    visited.add(this.key(x, y, z));
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      
+      // If we reached ground level, we have support
+      if (current.y <= GROUND_LEVEL) {
+        return true;
+      }
+      
+      // If we exceeded max distance, no support
+      if (current.dist >= maxDistance) {
+        continue;
+      }
+
+      // Check all 6 neighbors
+      const neighbors = [
+        [current.x + 1, current.y, current.z],
+        [current.x - 1, current.y, current.z],
+        [current.x, current.y + 1, current.z],
+        [current.x, current.y - 1, current.z],
+        [current.x, current.y, current.z + 1],
+        [current.x, current.y, current.z - 1],
+      ];
+
+      for (const [nx, ny, nz] of neighbors) {
+        const nkey = this.key(nx, ny, nz);
+        if (visited.has(nkey)) continue;
+        
+        const voxel = this.getVoxel(nx, ny, nz);
+        if (!voxel || voxel.type === VOXEL_AIR) continue;
+        
+        visited.add(nkey);
+        queue.push({x: nx, y: ny, z: nz, dist: current.dist + 1});
+      }
+    }
+
     return false;
   }
 
-  // Optimized collapse check - only checks locally affected area
-  collapseDisconnected(): number {
-    // For now, skip collapse detection for performance
-    // TODO: Implement localized collapse detection
-    return 0;
+  // Find all connected voxels that don't have support
+  private findUnsupportedChain(x: number, y: number, z: number, toCollapse: string[], checked: Set<string>): void {
+    const queue: Array<{x: number, y: number, z: number}> = [];
+    queue.push({x, y, z});
+    checked.add(this.key(x, y, z));
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const key = this.key(current.x, current.y, current.z);
+      
+      // Add to collapse list
+      toCollapse.push(key);
+
+      // Check all 6 neighbors
+      const neighbors = [
+        [current.x + 1, current.y, current.z],
+        [current.x - 1, current.y, current.z],
+        [current.x, current.y + 1, current.z],
+        [current.x, current.y - 1, current.z],
+        [current.x, current.y, current.z + 1],
+        [current.x, current.y, current.z - 1],
+      ];
+
+      for (const [nx, ny, nz] of neighbors) {
+        const nkey = this.key(nx, ny, nz);
+        if (checked.has(nkey)) continue;
+        
+        const voxel = this.getVoxel(nx, ny, nz);
+        if (!voxel || voxel.type === VOXEL_AIR) continue;
+        
+        checked.add(nkey);
+        
+        // Only continue if this neighbor also doesn't have support
+        if (!this.hasSupport(nx, ny, nz, 12)) {
+          queue.push({x: nx, y: ny, z: nz});
+        }
+      }
+    }
   }
 
   private getBaseColor(type: number): number {
