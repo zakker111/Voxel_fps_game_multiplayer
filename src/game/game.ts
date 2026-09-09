@@ -126,7 +126,7 @@ export class Game {
   private boundMouseMove: (e: MouseEvent) => void;
 
   weapons: Record<string, Weapon> = {
-    rifle: { fireRate: 0.4, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.01, name: 'Rifle' },
+    rifle: { fireRate: 0.4, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.001, name: 'Rifle' },
     smg: { fireRate: 0.1, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.04, name: 'SMG' },
   };
 
