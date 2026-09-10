@@ -18,7 +18,7 @@ export class Player {
   radius: number = 0.3;
   speed: number = 5;
   sprintMultiplier: number = 1.6;
-  crouchMultiplier: number = 0.5;
+  crouchMultiplier: number = 0.3; // Slower crouching
   jumpForce: number = 8;
   gravity: number = 20;
   sensitivity: number = 0.002;

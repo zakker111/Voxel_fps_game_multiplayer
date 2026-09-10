@@ -69,6 +69,8 @@ interface Bot {
   lastDamageTime: number;
   dodgeTimer: number;
   coverTimer: number;
+  weapon: 'rifle' | 'smg'; // Bot's equipped weapon
+  weaponMesh: THREE.Group | null; // Visual weapon model
 }
 
 interface Weapon {
@@ -518,20 +520,11 @@ export class Game {
           if (result.destroyed) {
             // Chunk automatically marked dirty by setVoxel
             this.sounds.voxelBreak();
-            this.showMessage('Voxel destroyed!');
             if (result.collapsed > 0) {
               this.sounds.collapse();
               // Trigger collapse animation
               this.createCollapseAnimation(result.collapsedVoxels);
             }
-          } else {
-            // Fast color update (no rebuild!)
-            const remaining = this.world.getVoxel(x, y, z);
-            if (remaining) {
-              this.world.updateVoxelColor(x, y, z, remaining.type, remaining.durability);
-              this.showMessage(`Voxel damaged! (${remaining.durability}/3 HP)`);
-            }
-            this.sounds.voxelBreak();
           }
         }
       }
@@ -674,47 +667,6 @@ export class Game {
     }
   }
 
-  private createBuildEffect(x: number, y: number, z: number): void {
-    // Create a quick expanding ring effect
-    const geometry = new THREE.RingGeometry(0.3, 0.5, 16);
-    const material = new THREE.MeshBasicMaterial({ 
-      color: 0x00ff00,
-      transparent: true,
-      opacity: 0.8,
-      side: THREE.DoubleSide
-    });
-    const ring = new THREE.Mesh(geometry, material);
-    
-    // Position at the built voxel
-    ring.position.set(x + 0.5, y + 0.5, z + 5);
-    
-    // Rotate to face camera
-    ring.lookAt(this.player.camera.position);
-    
-    this.scene.add(ring);
-    
-    // Animate the ring
-    let scale = 1;
-    let opacity = 0.8;
-    const animate = () => {
-      scale += 0.1;
-      opacity -= 0.05;
-      
-      ring.scale.set(scale, scale, scale);
-      material.opacity = opacity;
-      
-      if (opacity > 0) {
-        requestAnimationFrame(animate);
-      } else {
-        this.scene.remove(ring);
-        geometry.dispose();
-        material.dispose();
-      }
-    };
-    
-    animate();
-  }
-
   private createCollapseAnimation(voxels: Array<{ x: number; y: number; z: number; type: number }>): void {
     // Limit the number of animated voxels for performance
     const maxAnimated = Math.min(voxels.length, 50);
@@ -824,7 +776,8 @@ export class Game {
 
     if (hit && this.world.canDig(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z)) {
       const { x, y, z } = hit.voxelPos;
-      const result = this.world.damageVoxel(x, y, z, 1);
+      // Destroy voxel instantly (1 hit = 1 voxel)
+      const result = this.world.damageVoxel(x, y, z, 3);
 
       if (result.destroyed) {
         // Chunk automatically marked dirty by setVoxel
@@ -836,14 +789,6 @@ export class Game {
           // Trigger collapse animation
           this.createCollapseAnimation(result.collapsedVoxels);
         }
-      } else {
-        // Fast color update (no rebuild!)
-        const v = this.world.getVoxel(x, y, z);
-        if (v) {
-          this.world.updateVoxelColor(x, y, z, v.type, v.durability);
-          this.showMessage(`Durability: ${v.durability}/3`);
-        }
-        this.sounds.voxelBreak();
       }
     }
     this.emitState();
@@ -922,9 +867,6 @@ export class Game {
         // Chunk automatically marked dirty by setVoxel
         this.sounds.buildPlace();
         this.showMessage(`Built! (Inventory: ${this.inventory})`);
-        
-        // Create build effect (quick flash)
-        this.createBuildEffect(px, py, pz);
       } else if (this.world.isSolid(px, py, pz)) {
         this.showMessage('Position occupied');
       } else {
@@ -981,6 +923,12 @@ export class Game {
       nameTag.position.y = 2.6;
       group.add(nameTag);
 
+      // Randomly assign weapon (rifle or SMG)
+      const botWeapon = Math.random() > 0.5 ? 'rifle' : 'smg';
+      const weaponMesh = this.createBotWeaponMesh(botWeapon);
+      weaponMesh.position.set(0.3, 1.0, -0.2);
+      group.add(weaponMesh);
+
       this.bots.push({
         mesh: group,
         position: pos.clone(),
@@ -1019,6 +967,8 @@ export class Game {
         lastDamageTime: 0,
         dodgeTimer: 0,
         coverTimer: 0,
+        weapon: botWeapon,
+        weaponMesh: weaponMesh,
       });
     }
   }
@@ -1067,42 +1017,69 @@ export class Game {
     rightArm.position.set(0.4, 1.1, 0);
     group.add(rightArm);
 
-    // Weapon - more visible and realistic
+    return { group, leftLeg, rightLeg, leftArm, rightArm, head };
+  }
+
+  private createBotWeaponMesh(weaponType: 'rifle' | 'smg'): THREE.Group {
     const weaponGroup = new THREE.Group();
     
-    // Main barrel
-    const wBarrelGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8);
-    const wBarrelMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-    const wBarrel = new THREE.Mesh(wBarrelGeo, wBarrelMat);
-    wBarrel.rotation.x = Math.PI / 2;
-    wBarrel.position.set(0, 0, -0.3);
-    weaponGroup.add(wBarrel);
+    if (weaponType === 'rifle') {
+      // Rifle - longer barrel, wooden stock
+      const barrelGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.8, 8);
+      const barrelMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+      const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, 0, -0.4);
+      weaponGroup.add(barrel);
+      
+      const receiverGeo = new THREE.BoxGeometry(0.1, 0.08, 0.3);
+      const receiverMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
+      const receiver = new THREE.Mesh(receiverGeo, receiverMat);
+      receiver.position.set(0, 0, 0);
+      weaponGroup.add(receiver);
+      
+      const stockGeo = new THREE.BoxGeometry(0.08, 0.1, 0.25);
+      const stockMat = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
+      const stock = new THREE.Mesh(stockGeo, stockMat);
+      stock.position.set(0, -0.02, 0.25);
+      weaponGroup.add(stock);
+      
+      // Small magazine
+      const magGeo = new THREE.BoxGeometry(0.05, 0.1, 0.06);
+      const magMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+      const mag = new THREE.Mesh(magGeo, magMat);
+      mag.position.set(0, -0.1, 0);
+      weaponGroup.add(mag);
+    } else {
+      // SMG - shorter barrel, compact
+      const barrelGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.5, 8);
+      const barrelMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+      const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, 0, -0.25);
+      weaponGroup.add(barrel);
+      
+      const receiverGeo = new THREE.BoxGeometry(0.12, 0.1, 0.2);
+      const receiverMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
+      const receiver = new THREE.Mesh(receiverGeo, receiverMat);
+      receiver.position.set(0, 0, 0);
+      weaponGroup.add(receiver);
+      
+      const stockGeo = new THREE.BoxGeometry(0.06, 0.08, 0.15);
+      const stockMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
+      const stock = new THREE.Mesh(stockGeo, stockMat);
+      stock.position.set(0, -0.01, 0.15);
+      weaponGroup.add(stock);
+      
+      // Large magazine
+      const magGeo = new THREE.BoxGeometry(0.08, 0.18, 0.08);
+      const magMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+      const mag = new THREE.Mesh(magGeo, magMat);
+      mag.position.set(0, -0.14, 0);
+      weaponGroup.add(mag);
+    }
     
-    // Receiver
-    const wReceiverGeo = new THREE.BoxGeometry(0.12, 0.1, 0.25);
-    const wReceiverMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
-    const wReceiver = new THREE.Mesh(wReceiverGeo, wReceiverMat);
-    wReceiver.position.set(0, 0, 0);
-    weaponGroup.add(wReceiver);
-    
-    // Stock
-    const wStockGeo = new THREE.BoxGeometry(0.08, 0.12, 0.2);
-    const wStockMat = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
-    const wStock = new THREE.Mesh(wStockGeo, wStockMat);
-    wStock.position.set(0, -0.02, 0.2);
-    weaponGroup.add(wStock);
-    
-    // Magazine
-    const wMagGeo = new THREE.BoxGeometry(0.06, 0.15, 0.08);
-    const wMagMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-    const wMag = new THREE.Mesh(wMagGeo, wMagMat);
-    wMag.position.set(0, -0.12, 0);
-    weaponGroup.add(wMag);
-    
-    weaponGroup.position.set(0.45, 1.1, -0.2);
-    group.add(weaponGroup);
-
-    return { group, leftLeg, rightLeg, leftArm, rightArm, head };
+    return weaponGroup;
   }
 
   private createNameTag(team: Team, name: string): THREE.Sprite {
@@ -1750,8 +1727,8 @@ export class Game {
       
       if (distToTarget > 0.5) {
         toTarget.normalize();
-        // FASTER SPEED: 10 units/sec normal, 5 when crouching
-        const speed = bot.isCrouching ? 5 : 10;
+        // FASTER SPEED: 10 units/sec normal, 3 when crouching (slower)
+        const speed = bot.isCrouching ? 3 : 10;
         const newX = bot.position.x + toTarget.x * speed * dt;
         const newZ = bot.position.z + toTarget.z * speed * dt;
 
@@ -1812,8 +1789,9 @@ export class Game {
       if (bot.shootTimer <= 0 && enemyTarget) {
         const dist = bot.position.distanceTo(enemyTarget.pos);
         if (dist < 50) {
-          // Faster shooting, better accuracy
-          bot.shootTimer = 0.6 + Math.random() * 1.5;
+          // Use bot's weapon fire rate
+          const weaponFireRate = bot.weapon === 'rifle' ? 0.4 : 0.1;
+          bot.shootTimer = weaponFireRate + Math.random() * 0.5;
 
           // Base accuracy: 25% (up from 15%)
           let accuracy = 0.25;
@@ -1938,7 +1916,7 @@ export class Game {
       const v = this.world.getVoxel(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z);
       if (v) {
         const names: Record<number, string> = { 1: 'Dirt', 2: 'Stone', 3: 'Grass', 4: 'Built' };
-        this.player.targetInfo = `${names[v.type] || 'Voxel'} | Durability: ${v.durability}/3 | ${dist}m`;
+        this.player.targetInfo = `${names[v.type] || 'Voxel'} | ${dist}m`;
       }
 
       // Show build preview when we have inventory and not using weapons
