@@ -24,6 +24,8 @@ export interface GameState {
   buildValid: boolean;
   blueKills: number;
   redKills: number;
+  blueCaptures: number;
+  redCaptures: number;
   isAiming: boolean;
   currentAmmo: number;
   magazineSize: number;
@@ -121,6 +123,8 @@ export class Game {
   messageTimer: number = 0;
   blueKills: number = 0;
   redKills: number = 0;
+  blueCaptures: number = 0;
+  redCaptures: number = 0;
   buildMode: boolean = false;
   clock: THREE.Clock;
   onStateChange: ((state: GameState) => void) | null = null;
@@ -2095,6 +2099,55 @@ export class Game {
     }
   }
 
+  private checkFlagCaptures(): void {
+    const captureDistance = 3; // Distance to capture flag
+    
+    // Check player capture
+    if (!this.player.isDead) {
+      const enemyFlag = this.playerTeam === 'blue' ? RED_FLAG_POS : BLUE_FLAG_POS;
+      const distToFlag = Math.sqrt(
+        Math.pow(this.player.position.x - enemyFlag.x, 2) +
+        Math.pow(this.player.position.z - enemyFlag.z, 2)
+      );
+      
+      if (distToFlag < captureDistance) {
+        if (this.playerTeam === 'blue') {
+          this.blueCaptures++;
+          this.showMessage('🏁 BLUE TEAM CAPTURED THE FLAG!');
+        } else {
+          this.redCaptures++;
+          this.showMessage('🏁 RED TEAM CAPTURED THE FLAG!');
+        }
+        // Respawn player at their base
+        this.player.respawn(this.playerTeam);
+      }
+    }
+    
+    // Check bot captures
+    for (const bot of this.bots) {
+      if (bot.isDead) continue;
+      
+      const enemyFlag = bot.team === 'blue' ? RED_FLAG_POS : BLUE_FLAG_POS;
+      const distToFlag = Math.sqrt(
+        Math.pow(bot.position.x - enemyFlag.x, 2) +
+        Math.pow(bot.position.z - enemyFlag.z, 2)
+      );
+      
+      if (distToFlag < captureDistance) {
+        if (bot.team === 'blue') {
+          this.blueCaptures++;
+          this.showMessage('🏁 BLUE BOT CAPTURED THE FLAG!');
+        } else {
+          this.redCaptures++;
+          this.showMessage('🏁 RED BOT CAPTURED THE FLAG!');
+        }
+        // Respawn bot at their base
+        bot.isDead = true;
+        bot.respawnTimer = 5;
+      }
+    }
+  }
+
   start(): void {
     console.log('Game starting...');
     this.animate();
@@ -2220,6 +2273,9 @@ export class Game {
       this.updateRemotePlayers(dt);
     }
     
+    // Check for flag captures
+    this.checkFlagCaptures();
+    
     this.updateHighlight();
 
     if (this.muzzleTimer > 0) {
@@ -2258,6 +2314,8 @@ export class Game {
         buildValid: this.inventory > 0,
         blueKills: this.blueKills,
         redKills: this.redKills,
+        blueCaptures: this.blueCaptures,
+        redCaptures: this.redCaptures,
         isAiming: this.isAiming,
         currentAmmo: weapon?.currentAmmo || 0,
         magazineSize: weapon?.magazineSize || 0,
@@ -2384,7 +2442,12 @@ export class Game {
   private updateRemotePlayers(dt: number): void {
     for (const [playerId, remotePlayer] of this.remotePlayers) {
       // Smooth interpolation
+      const prevPosition = remotePlayer.mesh.position.clone();
       remotePlayer.mesh.position.lerp(remotePlayer.targetPosition, Math.min(dt * 10, 1));
+      
+      // Check if player is moving
+      const moveDistance = remotePlayer.mesh.position.distanceTo(prevPosition);
+      const isMoving = moveDistance > 0.01;
       
       // Smooth rotation
       const currentYaw = remotePlayer.mesh.rotation.y;
@@ -2396,6 +2459,45 @@ export class Game {
       // Update crouching visual
       const targetScale = remotePlayer.state.isCrouching ? 0.7 : 1.0;
       remotePlayer.mesh.scale.y += (targetScale - remotePlayer.mesh.scale.y) * Math.min(dt * 10, 1);
+
+      // Find animation parts (legs, arms, head)
+      const leftLeg = remotePlayer.mesh.children.find(child => 
+        child instanceof THREE.Mesh && child.position.x < -0.1 && child.position.y < 0.5
+      ) as THREE.Mesh | undefined;
+      const rightLeg = remotePlayer.mesh.children.find(child => 
+        child instanceof THREE.Mesh && child.position.x > 0.1 && child.position.y < 0.5
+      ) as THREE.Mesh | undefined;
+      const leftArm = remotePlayer.mesh.children.find(child => 
+        child instanceof THREE.Mesh && child.position.x < -0.3 && child.position.y > 0.8
+      ) as THREE.Mesh | undefined;
+      const rightArm = remotePlayer.mesh.children.find(child => 
+        child instanceof THREE.Mesh && child.position.x > 0.3 && child.position.y > 0.8
+      ) as THREE.Mesh | undefined;
+
+      // Walking animation
+      if (isMoving && !remotePlayer.state.isCrouching) {
+        // Initialize walk cycle if not exists
+        if (!(remotePlayer as any).walkCycle) {
+          (remotePlayer as any).walkCycle = 0;
+        }
+        (remotePlayer as any).walkCycle += dt * 12;
+        const swing = Math.sin((remotePlayer as any).walkCycle) * 0.6;
+        
+        if (leftLeg) leftLeg.rotation.x = swing;
+        if (rightLeg) rightLeg.rotation.x = -swing;
+        if (leftArm) leftArm.rotation.x = -swing * 0.8;
+        if (rightArm) rightArm.rotation.x = swing * 0.8;
+        
+        // Body bob
+        const bob = Math.abs(Math.sin((remotePlayer as any).walkCycle * 2)) * 0.08;
+        remotePlayer.mesh.position.y += bob;
+      } else {
+        // Reset animations when not moving
+        if (leftLeg) leftLeg.rotation.x *= 0.9;
+        if (rightLeg) rightLeg.rotation.x *= 0.9;
+        if (leftArm) leftArm.rotation.x *= 0.9;
+        if (rightArm) rightArm.rotation.x *= 0.9;
+      }
 
       // Update aiming visual - find weapon mesh in the remote player mesh
       const aimTransition = remotePlayer.state.aimTransition || (remotePlayer.state.isAiming ? 1 : 0);
