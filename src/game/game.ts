@@ -1673,7 +1673,16 @@ export class Game {
     const bodyY = Math.floor(botY + 0.5);
     const headY = Math.floor(botY + 1.5);
 
-    if (this.world.isSolid(bx, bodyY, bz)) return false;
+    // Check if there's a wall at body or head height
+    if (this.world.isSolid(bx, bodyY, bz)) {
+      // Check if bot can step up (1 voxel step)
+      const stepUpY = Math.floor(botY + 1.5);
+      const stepUpHeadY = Math.floor(botY + 2.5);
+      if (!this.world.isSolid(bx, stepUpY, bz) && !this.world.isSolid(bx, stepUpHeadY, bz)) {
+        return true; // Can step up
+      }
+      return false; // Can't move or step up
+    }
     if (this.world.isSolid(bx, headY, bz)) return false;
 
     return true;
@@ -1806,24 +1815,39 @@ export class Game {
 
       // Detect stuck - improved detection
       const moveDist = bot.position.distanceTo(bot.lastPos);
-      if (moveDist < 0.05) { // Increased threshold
+      if (moveDist < 0.1) { // Increased threshold for better detection
         bot.stuckTimer += dt;
       } else {
         bot.stuckTimer = 0;
       }
       bot.lastPos.copy(bot.position);
       
-      // Jump when stuck - more aggressive jumping
-      if (bot.stuckTimer > 0.3 && bot.grounded && bot.jumpCooldown <= 0) {
-        bot.velocity.y = 9; // Stronger jump
-        bot.jumpCooldown = 1.0; // Shorter cooldown
-        bot.stuckTimer = 0;
-        
-        // Also try to move in a random direction
-        const randomAngle = Math.random() * Math.PI * 2;
-        const escapeX = bot.position.x + Math.cos(randomAngle) * 2;
-        const escapeZ = bot.position.z + Math.sin(randomAngle) * 2;
-        bot.targetPos.set(escapeX, bot.position.y, escapeZ);
+      // Improved stuck recovery
+      if (bot.stuckTimer > 0.5 && bot.grounded) {
+        // Try multiple recovery strategies
+        if (bot.jumpCooldown <= 0) {
+          // Strategy 1: Jump and move in random direction
+          bot.velocity.y = 9;
+          bot.jumpCooldown = 1.5;
+          
+          const randomAngle = Math.random() * Math.PI * 2;
+          const escapeX = bot.position.x + Math.cos(randomAngle) * 3;
+          const escapeZ = bot.position.z + Math.sin(randomAngle) * 3;
+          bot.targetPos.set(escapeX, bot.position.y, escapeZ);
+          bot.stuckTimer = 0;
+        } else {
+          // Strategy 2: Try alternative path around obstacle
+          const toTarget = bot.targetPos.clone().sub(bot.position);
+          const currentAngle = Math.atan2(toTarget.z, toTarget.x);
+          
+          // Try 45 degrees left or right
+          const tryLeft = Math.random() > 0.5;
+          const alternativeAngle = currentAngle + (tryLeft ? Math.PI / 4 : -Math.PI / 4);
+          const altX = bot.position.x + Math.cos(alternativeAngle) * 5;
+          const altZ = bot.position.z + Math.sin(alternativeAngle) * 5;
+          bot.targetPos.set(altX, bot.position.y, altZ);
+          bot.stuckTimer = 0;
+        }
       }
 
       // AI Awareness: Check for edges and avoid them
@@ -2128,30 +2152,50 @@ export class Game {
         let movedZ = false;
         
         // Only move if the movement is significant enough
-        if (Math.abs(moveX) > 0.01 && this.botCanMoveTo(newX, bot.position.z, bot.position.y)) {
-          bot.position.x = newX;
-          movedX = true;
+        if (Math.abs(moveX) > 0.01) {
+          if (this.botCanMoveTo(newX, bot.position.z, bot.position.y)) {
+            bot.position.x = newX;
+            movedX = true;
+          } else if (bot.grounded) {
+            // Try to step up over 1-voxel obstacle
+            const groundY = this.world.getGroundHeight(newX, bot.position.z);
+            if (groundY > bot.position.y + 0.5 && groundY <= bot.position.y + 1.5) {
+              bot.position.x = newX;
+              bot.position.y = groundY;
+              movedX = true;
+            }
+          }
         }
         
-        if (Math.abs(moveZ) > 0.01 && this.botCanMoveTo(bot.position.x, newZ, bot.position.y)) {
-          bot.position.z = newZ;
-          movedZ = true;
+        if (Math.abs(moveZ) > 0.01) {
+          if (this.botCanMoveTo(bot.position.x, newZ, bot.position.y)) {
+            bot.position.z = newZ;
+            movedZ = true;
+          } else if (bot.grounded) {
+            // Try to step up over 1-voxel obstacle
+            const groundY = this.world.getGroundHeight(bot.position.x, newZ);
+            if (groundY > bot.position.y + 0.5 && groundY <= bot.position.y + 1.5) {
+              bot.position.z = newZ;
+              bot.position.y = groundY;
+              movedZ = true;
+            }
+          }
         }
         
         // Only set isMoving if actually moved
         bot.isMoving = movedX || movedZ;
 
-        // Set target yaw - face movement direction when carrying flag, otherwise face enemy
+        // Set target yaw - prioritize movement direction when moving, face enemy when stationary
         if (bot.carryingFlag) {
           // When carrying flag, ALWAYS face movement direction (toward own base)
           bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
+        } else if (bot.isMoving) {
+          // When moving, face movement direction
+          bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
         } else if (enemyTarget && distToEnemy < 50) {
-          // In combat - face the enemy
+          // When stationary and in combat, face the enemy
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
           bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
-        } else if (bot.isMoving) {
-          // Not in combat - face movement direction
-          bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
         }
       } else {
         bot.isMoving = false;
@@ -2324,14 +2368,24 @@ export class Game {
         bot.rightArm.rotation.x *= 0.9;
       }
       
-      // Head tracking
-      if (enemyTarget && distToEnemy < 45) {
+      // Head tracking - look at enemy when shooting
+      if (enemyTarget && distToEnemy < 45 && bot.shootTimer <= 0.5) {
+        // Calculate angle to enemy relative to bot's current body rotation
         const toEnemy = enemyTarget.pos.clone().sub(bot.position);
-        const headYaw = Math.atan2(toEnemy.x, toEnemy.z) - bot.currentYaw;
+        const targetHeadYaw = Math.atan2(toEnemy.x, toEnemy.z);
+        const headYaw = targetHeadYaw - bot.currentYaw;
         const normalizedHeadYaw = Math.atan2(Math.sin(headYaw), Math.cos(headYaw));
+        
+        // Clamp head rotation to ±60 degrees (±1.05 radians)
         const clampedHeadYaw = Math.max(-1.05, Math.min(1.05, normalizedHeadYaw));
-        bot.head.rotation.y = bot.head.rotation.y + (clampedHeadYaw - bot.head.rotation.y) * Math.min(dt * 8, 1);
+        
+        // Smoothly interpolate head rotation
+        bot.head.rotation.y = bot.head.rotation.y + (clampedHeadYaw - bot.head.rotation.y) * Math.min(dt * 10, 1);
+      } else if (bot.isMoving) {
+        // When moving, head faces forward (relative to body)
+        bot.head.rotation.y *= 0.9; // Smoothly return to center
       } else {
+        // When stationary and not shooting, slowly return to center
         bot.head.rotation.y *= 0.95;
       }
     }

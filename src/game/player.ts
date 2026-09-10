@@ -183,6 +183,19 @@ export class Player {
     return false;
   }
 
+  // Check if player can step up over a 1-voxel obstacle
+  private canStepUp(currentPos: THREE.Vector3, newPos: THREE.Vector3): boolean {
+    const stepHeight = 1.0; // Can step up 1 voxel
+    const testPos = newPos.clone();
+    testPos.y = currentPos.y + stepHeight;
+    
+    // Check if there's space above the obstacle
+    if (!this.checkCollisionAt(testPos)) {
+      return true;
+    }
+    return false;
+  }
+
   // Check if player is standing on ground (feet touching solid)
   private isOnGround(pos: THREE.Vector3): boolean {
     const r = this.radius;
@@ -303,18 +316,28 @@ export class Player {
 
     const newPos = this.position.clone();
 
-    // Move X axis with collision detection
+    // Move X axis with collision detection and step-up
     newPos.x += this.velocity.x * dt;
     if (this.checkCollisionAt(newPos)) {
-      newPos.x = this.position.x;
-      this.velocity.x = 0;
+      // Try to step up over 1-voxel obstacle
+      if (this.isGrounded && this.canStepUp(this.position, newPos)) {
+        newPos.y = this.position.y + 1.0;
+      } else {
+        newPos.x = this.position.x;
+        this.velocity.x = 0;
+      }
     }
 
-    // Move Z axis with collision detection
+    // Move Z axis with collision detection and step-up
     newPos.z += this.velocity.z * dt;
     if (this.checkCollisionAt(newPos)) {
-      newPos.z = this.position.z;
-      this.velocity.z = 0;
+      // Try to step up over 1-voxel obstacle
+      if (this.isGrounded && this.canStepUp(this.position, newPos)) {
+        newPos.y = this.position.y + 1.0;
+      } else {
+        newPos.z = this.position.z;
+        this.velocity.z = 0;
+      }
     }
 
     // Move Y axis with collision detection
