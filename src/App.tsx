@@ -9,6 +9,7 @@ function App() {
     isDead: false, respawnTimer: 0, hitMarker: false, targetInfo: '',
     message: '', messageTimer: 0, buildMode: false, buildValid: true,
     blueKills: 0, redKills: 0, isAiming: false,
+    currentAmmo: 10, magazineSize: 10, isReloading: false,
   });
   const [started, setStarted] = useState(false);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'singleplayer' | 'online' | null>(null);
@@ -146,9 +147,12 @@ function App() {
               <div className="mt-3 pt-3 border-t border-gray-700">
                 <p className="text-gray-300"><b>Left Click</b> — Shoot / Use tool</p>
                 <p className="text-gray-300"><b>Right Click</b> — Toggle iron sights / Build</p>
+                <p className="text-gray-300"><b>R</b> — Reload weapon</p>
                 <p className="text-gray-300"><b>Mouse Wheel</b> — Switch equipment</p>
                 <div className="mt-2 text-xs text-gray-400 space-y-1">
                   <p>🎯 1 headshot / 3 body shots to kill</p>
+                  <p>🔫 Rifle: 10 rounds | SMG: 30 rounds (unlimited ammo)</p>
+                  <p>🏃 Running + shooting = less accurate | 🧎 Crouching = more accurate</p>
                   <p>🏗️ <b>How to build:</b> Harvest blocks with pickaxe (4), then right-click to place</p>
                   <p>💥 All terrain is destroyable by gunfire (3 shots per voxel)</p>
                   <p>🧪 Singleplayer mode: No bots, test building & combat freely</p>
@@ -223,6 +227,30 @@ function App() {
               )}
             </div>
           </div>
+
+          {/* Ammo Counter */}
+          {(gameState.equipment === 'rifle' || gameState.equipment === 'smg') && (
+            <div className="absolute bottom-32 right-8 z-10">
+              <div className="bg-gray-900/80 backdrop-blur-sm rounded-xl px-5 py-3 border-2 border-gray-700">
+                <div className="text-gray-400 text-xs mb-1">Ammo</div>
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-2xl font-bold ${
+                    gameState.currentAmmo === 0 ? 'text-red-500' : 
+                    gameState.currentAmmo < gameState.magazineSize * 0.3 ? 'text-yellow-500' : 
+                    'text-white'
+                  }`}>
+                    {gameState.currentAmmo}
+                  </span>
+                  <span className="text-gray-500 text-sm">/ {gameState.magazineSize}</span>
+                </div>
+                {gameState.isReloading && (
+                  <div className="text-xs text-yellow-500 mt-1 animate-pulse">
+                    🔄 Reloading...
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Inventory */}
           <div className="absolute top-8 right-8 z-10">

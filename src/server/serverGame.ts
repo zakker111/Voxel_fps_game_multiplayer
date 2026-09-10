@@ -100,6 +100,16 @@ export class ServerGame {
         this.handleBuild(playerId, message.position);
         break;
 
+      case 'reload':
+        if (player.startReload()) {
+          this.broadcast({
+            type: 'playerUpdated',
+            playerId,
+            state: player.getState(),
+          });
+        }
+        break;
+
       case 'disconnect':
         this.removePlayer(playerId);
         break;
@@ -114,6 +124,10 @@ export class ServerGame {
     const weapon = WEAPONS[player.equipment as 'rifle' | 'smg'];
     if (!weapon) return;
 
+    // Check magazine state
+    if (player.isReloading) return;
+    if (!player.useAmmo()) return; // Returns false if no ammo or reloading
+
     const lastTime = this.lastShootTime.get(playerId) || 0;
     if (now - lastTime < weapon.fireRate) return;
     
@@ -124,6 +138,13 @@ export class ServerGame {
     setTimeout(() => {
       player.isShooting = false;
     }, 100); // Reset after 100ms
+    
+    // Broadcast updated magazine state
+    this.broadcast({
+      type: 'playerUpdated',
+      playerId,
+      state: player.getState(),
+    });
 
     // Raycast to find hit
     const hit = this.world.raycast(origin, direction, 100);

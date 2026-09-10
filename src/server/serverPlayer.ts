@@ -28,6 +28,28 @@ export class ServerPlayer {
   isSprinting: boolean = false;
   isGrounded: boolean = false;
   isShooting: boolean = false;
+  
+  // Magazine system
+  currentAmmo: number = 10;
+  magazineSize: number = 10;
+  isReloading: boolean = false;
+  reloadStartTime: number = 0;
+  reloadTime: number = 2.0; // seconds
+  
+  // Weapon-specific magazine sizes
+  private static readonly MAGAZINE_SIZES = {
+    rifle: 10,
+    smg: 30,
+    pickaxe: 0,
+    spade: 0
+  };
+  
+  private static readonly RELOAD_TIMES = {
+    rifle: 2.0,
+    smg: 1.5,
+    pickaxe: 0,
+    spade: 0
+  };
 
   private input: PlayerInput = {
     moveX: 0,
@@ -167,6 +189,51 @@ export class ServerPlayer {
     this.velocity = { x: 0, y: 0, z: 0 };
     this.hp = 100;
     this.isDead = false;
+    // Reset magazine on respawn
+    this.currentAmmo = ServerPlayer.MAGAZINE_SIZES[this.equipment];
+    this.magazineSize = ServerPlayer.MAGAZINE_SIZES[this.equipment];
+    this.isReloading = false;
+  }
+
+  changeEquipment(equipment: 'rifle' | 'smg' | 'pickaxe' | 'spade'): void {
+    this.equipment = equipment;
+    this.magazineSize = ServerPlayer.MAGAZINE_SIZES[equipment];
+    this.currentAmmo = this.magazineSize;
+    this.isReloading = false;
+    this.reloadTime = ServerPlayer.RELOAD_TIMES[equipment];
+  }
+
+  startReload(): boolean {
+    if (this.isReloading || this.currentAmmo === this.magazineSize) {
+      return false;
+    }
+    if (this.equipment === 'pickaxe' || this.equipment === 'spade') {
+      return false;
+    }
+    
+    this.isReloading = true;
+    this.reloadStartTime = Date.now() / 1000;
+    return true;
+  }
+
+  updateReload(): void {
+    if (!this.isReloading) return;
+    
+    const now = Date.now() / 1000;
+    const elapsed = now - this.reloadStartTime;
+    
+    if (elapsed >= this.reloadTime) {
+      this.currentAmmo = this.magazineSize;
+      this.isReloading = false;
+    }
+  }
+
+  useAmmo(): boolean {
+    if (this.isReloading || this.currentAmmo <= 0) {
+      return false;
+    }
+    this.currentAmmo--;
+    return true;
   }
 
   getState(): PlayerState {
@@ -183,6 +250,9 @@ export class ServerPlayer {
       isCrouching: this.isCrouching,
       isSprinting: this.isSprinting,
       isShooting: this.isShooting,
+      currentAmmo: this.currentAmmo,
+      magazineSize: this.magazineSize,
+      isReloading: this.isReloading,
     };
   }
 }

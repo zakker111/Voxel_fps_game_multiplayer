@@ -124,6 +124,18 @@ export class SoundManager {
     this.playTone(500, 0.05, 0.15, 'sine');
   }
 
+  reload() {
+    // Magazine out sound
+    this.playNoise(0.1, 0.2);
+    this.playTone(300, 0.08, 0.15, 'square');
+    
+    // Magazine in sound (delayed)
+    setTimeout(() => {
+      this.playNoise(0.1, 0.25);
+      this.playTone(400, 0.1, 0.2, 'square');
+    }, 800);
+  }
+
   playSoundAtVolume(soundType: 'rifle' | 'smg', volume: number) {
     if (soundType === 'rifle') {
       this.playNoise(0.1, 0.4 * volume);

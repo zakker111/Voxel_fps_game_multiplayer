@@ -24,6 +24,9 @@ export interface PlayerState {
   isCrouching: boolean;
   isSprinting: boolean;
   isShooting?: boolean;
+  currentAmmo?: number;
+  magazineSize?: number;
+  isReloading?: boolean;
 }
 
 export interface VoxelChange {
@@ -47,6 +50,7 @@ export type ClientMessage =
   | { type: 'shoot'; origin: Position; direction: Position }
   | { type: 'useTool'; tool: 'pickaxe' | 'spade'; target: Position }
   | { type: 'build'; position: Position }
+  | { type: 'reload' }
   | { type: 'disconnect' };
 
 export interface PlayerInput {

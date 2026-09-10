@@ -25,6 +25,9 @@ export interface GameState {
   blueKills: number;
   redKills: number;
   isAiming: boolean;
+  currentAmmo: number;
+  magazineSize: number;
+  isReloading: boolean;
 }
 
 interface Bot {
@@ -74,6 +77,11 @@ interface Weapon {
   damage: { head: number; body: number };
   spread: number;
   name: string;
+  magazineSize: number;
+  currentAmmo: number;
+  reloadTime: number; // seconds
+  isReloading: boolean;
+  reloadStartTime: number;
 }
 
 const TEAM_COLORS: Record<Team, { body: number; accent: number; legs: number; label: string }> = {
@@ -150,6 +158,11 @@ export class Game {
     maxLife: number;
   }> = [];
   
+  // Reload animation
+  reloadAnimationTime: number = 0;
+  isReloadAnimating: boolean = false;
+  reloadAnimationDuration: number = 1.5; // seconds
+  
   gameMode: GameMode = 'multiplayer';
   
   // Multiplayer networking
@@ -168,8 +181,30 @@ export class Game {
   private boundMouseMove: (e: MouseEvent) => void;
 
   weapons: Record<string, Weapon> = {
-    rifle: { fireRate: 0.4, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.0005, name: 'Rifle' },
-    smg: { fireRate: 0.1, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.04, name: 'SMG' },
+    rifle: { 
+      fireRate: 0.4, 
+      lastFired: 0, 
+      damage: { head: 100, body: 34 }, 
+      spread: 0.0005, 
+      name: 'Rifle',
+      magazineSize: 10,
+      currentAmmo: 10,
+      reloadTime: 2.0,
+      isReloading: false,
+      reloadStartTime: 0
+    },
+    smg: { 
+      fireRate: 0.1, 
+      lastFired: 0, 
+      damage: { head: 100, body: 34 }, 
+      spread: 0.04, 
+      name: 'SMG',
+      magazineSize: 30,
+      currentAmmo: 30,
+      reloadTime: 1.5,
+      isReloading: false,
+      reloadStartTime: 0
+    },
   };
 
   constructor(canvas: HTMLCanvasElement, mode: GameMode = 'multiplayer') {
@@ -318,6 +353,7 @@ export class Game {
     if (e.code === 'Digit2') { this.equipment = 'smg'; this.sounds.weaponSwitch(); this.switchWeaponModel('smg'); this.isAiming = false; this.emitState(); }
     if (e.code === 'Digit3') { this.equipment = 'spade'; this.sounds.weaponSwitch(); this.switchWeaponModel('spade'); this.isAiming = false; this.emitState(); }
     if (e.code === 'Digit4') { this.equipment = 'pickaxe'; this.sounds.weaponSwitch(); this.switchWeaponModel('pickaxe'); this.isAiming = false; this.emitState(); }
+    if (e.code === 'KeyR') { this.startReload(); }
     this.player.handleKeyDown(e.code);
   }
 
@@ -356,8 +392,24 @@ export class Game {
 
   private shoot(now: number): void {
     const weapon = this.weapons[this.equipment];
+    
+    // Can't shoot while reloading
+    if (weapon.isReloading) {
+      this.showMessage('Reloading...');
+      return;
+    }
+    
+    // Check magazine ammo
+    if (weapon.currentAmmo <= 0) {
+      this.showMessage('Magazine empty! Press R to reload');
+      return;
+    }
+    
     if (now - weapon.lastFired < weapon.fireRate) return;
     weapon.lastFired = now;
+    
+    // Decrease ammo
+    weapon.currentAmmo--;
 
     if (this.equipment === 'rifle') this.sounds.rifleShot();
     else if (this.equipment === 'smg') this.sounds.smgShot();
@@ -379,13 +431,44 @@ export class Game {
     // Create bullet tracer
     this.createBulletTracer(muzzlePos, dir.clone());
     
-    const spreadMultiplier = this.isAiming ? 0.3 : 1.0;
+    // Calculate accuracy based on movement state
+    let spreadMultiplier = 1.0;
+    
+    // ADS bonus
+    if (this.isAiming) {
+      spreadMultiplier *= 0.3;
+    }
+    
+    // Crouching bonus
+    if (this.player.isCrouching) {
+      spreadMultiplier *= 0.6;
+    }
+    
+    // Movement penalty
+    const horizontalSpeed = Math.sqrt(
+      this.player.velocity.x * this.player.velocity.x + 
+      this.player.velocity.z * this.player.velocity.z
+    );
+    
+    if (horizontalSpeed > 0.5) {
+      if (this.player.isSprinting) {
+        spreadMultiplier *= 2.5; // Running/shooting very inaccurate
+      } else {
+        spreadMultiplier *= 1.5; // Walking/shooting less accurate
+      }
+    }
+    
     const actualSpread = weapon.spread * spreadMultiplier;
     const shootDir = dir.clone();
     shootDir.x += (Math.random() - 0.5) * actualSpread;
     shootDir.y += (Math.random() - 0.5) * actualSpread;
     shootDir.z += (Math.random() - 0.5) * actualSpread;
     shootDir.normalize();
+    
+    // Auto-reload when magazine is empty
+    if (weapon.currentAmmo <= 0) {
+      this.startReload();
+    }
 
     let hitBot = false;
     let closestDist = Infinity;
@@ -477,6 +560,46 @@ export class Game {
         this.showMessage(`Eliminated ${TEAM_COLORS[closestBot.team].label} bot! ${isHeadshot ? '🎯 HEADSHOT!' : ''}`);
       } else {
         this.showMessage(`Hit! ${closestBot.hp} HP remaining`);
+      }
+    }
+  }
+
+  private startReload(): void {
+    const weapon = this.weapons[this.equipment];
+    if (weapon.isReloading || weapon.currentAmmo === weapon.magazineSize) return;
+    
+    weapon.isReloading = true;
+    weapon.reloadStartTime = performance.now() / 1000;
+    this.isReloadAnimating = true;
+    this.reloadAnimationTime = 0;
+    this.reloadAnimationDuration = weapon.reloadTime;
+    
+    this.sounds.reload();
+    this.showMessage(`Reloading ${weapon.name}...`);
+  }
+
+  private updateReload(dt: number): void {
+    const weapon = this.weapons[this.equipment];
+    
+    if (weapon.isReloading) {
+      const now = performance.now() / 1000;
+      const elapsed = now - weapon.reloadStartTime;
+      
+      if (elapsed >= weapon.reloadTime) {
+        // Reload complete
+        weapon.currentAmmo = weapon.magazineSize;
+        weapon.isReloading = false;
+        this.isReloadAnimating = false;
+        this.showMessage(`${weapon.name} reloaded!`);
+      }
+    }
+    
+    // Update reload animation
+    if (this.isReloadAnimating) {
+      this.reloadAnimationTime += dt;
+      if (this.reloadAnimationTime >= this.reloadAnimationDuration) {
+        this.isReloadAnimating = false;
+        this.reloadAnimationTime = 0;
       }
     }
   }
@@ -1906,6 +2029,31 @@ export class Game {
       this.currentWeaponModel.position.z += (this.hipPosition.z - this.currentWeaponModel.position.z) * 0.1;
     }
     
+    // Update reload animation
+    this.updateReload(dt);
+    
+    // Animate weapon during reload
+    if (this.isReloadAnimating && this.currentWeaponModel && (this.equipment === 'rifle' || this.equipment === 'smg')) {
+      const reloadProgress = this.reloadAnimationTime / this.reloadAnimationDuration;
+      
+      // Magazine drop and insert animation
+      if (reloadProgress < 0.4) {
+        // Magazine dropping out
+        const dropProgress = reloadProgress / 0.4;
+        this.currentWeaponModel.rotation.x = dropProgress * 0.3;
+        this.currentWeaponModel.position.y = this.hipPosition.y - dropProgress * 0.1;
+      } else if (reloadProgress < 0.6) {
+        // Pause (magazine out)
+        this.currentWeaponModel.rotation.x = 0.3;
+        this.currentWeaponModel.position.y = this.hipPosition.y - 0.1;
+      } else {
+        // Magazine inserting
+        const insertProgress = (reloadProgress - 0.6) / 0.4;
+        this.currentWeaponModel.rotation.x = 0.3 * (1 - insertProgress);
+        this.currentWeaponModel.position.y = this.hipPosition.y - 0.1 * (1 - insertProgress);
+      }
+    }
+    
     // Update death animations
     const deathAnimationDuration = 1.5;
     for (const [uuid, anim] of this.deathAnimations) {
@@ -1966,6 +2114,7 @@ export class Game {
 
   private emitState(): void {
     if (this.onStateChange) {
+      const weapon = this.weapons[this.equipment];
       this.onStateChange({
         hp: this.player.hp,
         maxHp: this.player.maxHp,
@@ -1982,6 +2131,9 @@ export class Game {
         blueKills: this.blueKills,
         redKills: this.redKills,
         isAiming: this.isAiming,
+        currentAmmo: weapon?.currentAmmo || 0,
+        magazineSize: weapon?.magazineSize || 0,
+        isReloading: weapon?.isReloading || false,
       });
     }
   }
