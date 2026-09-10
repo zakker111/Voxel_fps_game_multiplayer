@@ -318,7 +318,7 @@ export class Game {
     else if (this.equipment === 'smg') this.sounds.smgShot();
 
     this.muzzleFlash.intensity = 3;
-    this.muzzleFlash.position.copy(this.player.getEyePosition());
+    this.muzzleFlash.position.copy(this.player.camera.position);
     this.muzzleTimer = 0.05;
 
     const dir = this.player.getAimDirection();
@@ -329,7 +329,7 @@ export class Game {
     dir.z += (Math.random() - 0.5) * actualSpread;
     dir.normalize();
 
-    const origin = this.player.getEyePosition();
+    const origin = this.player.camera.position.clone();
 
     let hitBot = false;
     let closestDist = Infinity;
@@ -422,7 +422,7 @@ export class Game {
     this.lastActionTime = now;
     this.sounds.pickaxeHit();
 
-    const origin = this.player.getEyePosition();
+    const origin = this.player.camera.position.clone();
     const dir = this.player.getAimDirection();
     const hit = this.world.raycast(origin, dir, 5);
 
@@ -457,7 +457,7 @@ export class Game {
     this.lastActionTime = now;
     this.sounds.spadeHit();
 
-    const origin = this.player.getEyePosition();
+    const origin = this.player.camera.position.clone();
     const dir = this.player.getAimDirection();
     const hit = this.world.raycast(origin, dir, 5);
 
@@ -495,7 +495,7 @@ export class Game {
       return;
     }
 
-    const origin = this.player.getEyePosition();
+    const origin = this.player.camera.position.clone();
     const dir = this.player.getAimDirection();
     const hit = this.world.raycast(origin, dir, 6);
 
@@ -1349,7 +1349,7 @@ export class Game {
       return;
     }
 
-    const origin = this.player.getEyePosition();
+    const origin = this.player.camera.position.clone();
     const dir = this.player.getAimDirection();
     const hit = this.world.raycast(origin, dir, 8);
 

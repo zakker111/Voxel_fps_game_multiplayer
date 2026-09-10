@@ -51,8 +51,9 @@ export class Player {
   }
 
   getAimDirection(): THREE.Vector3 {
+    // Use camera's actual forward direction for perfect crosshair alignment
     const dir = new THREE.Vector3(0, 0, -1);
-    dir.applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    dir.applyQuaternion(this.camera.quaternion);
     return dir.normalize();
   }
 
@@ -253,18 +254,23 @@ export class Player {
     if (this.isSprinting && !this.isCrouching) speed *= this.sprintMultiplier;
     if (this.isCrouching) speed *= this.crouchMultiplier;
 
-    this.velocity.x = moveDir.x * speed;
-    this.velocity.z = moveDir.z * speed;
+    // Smooth acceleration for better movement feel
+    const targetVelX = moveDir.x * speed;
+    const targetVelZ = moveDir.z * speed;
+    const acceleration = this.isGrounded ? 15 : 8; // Faster acceleration on ground
+    
+    this.velocity.x += (targetVelX - this.velocity.x) * Math.min(acceleration * dt, 1);
+    this.velocity.z += (targetVelZ - this.velocity.z) * Math.min(acceleration * dt, 1);
 
     // Check if on ground BEFORE applying gravity
     this.isGrounded = this.isOnGround(this.position);
 
-    // Only apply gravity if not grounded
+    // Only apply gravity if not grounded AND not jumping up
     if (!this.isGrounded) {
       this.velocity.y -= this.gravity * dt;
       if (this.velocity.y < -30) this.velocity.y = -30;
-    } else {
-      // Reset vertical velocity when on ground
+    } else if (this.velocity.y <= 0) {
+      // Reset vertical velocity when on ground AND not jumping
       this.velocity.y = 0;
     }
 
