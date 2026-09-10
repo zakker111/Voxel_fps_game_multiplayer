@@ -75,6 +75,9 @@ interface Bot {
   weaponMesh: THREE.Group | null; // Visual weapon model
   isAiming: boolean; // Is bot aiming down sights
   aimTransition: number; // 0-1 for smooth aiming transition
+  // CTF flag system
+  carryingFlag: boolean; // Is bot carrying enemy flag
+  flagMesh: THREE.Mesh | null; // Visual flag mesh when carrying
 }
 
 interface Weapon {
@@ -172,6 +175,14 @@ export class Game {
   reloadAnimationTime: number = 0;
   isReloadAnimating: boolean = false;
   reloadAnimationDuration: number = 1.5; // seconds
+  
+  // CTF Flag System
+  blueFlagMesh: THREE.Mesh | null = null; // Blue flag at base
+  redFlagMesh: THREE.Mesh | null = null; // Red flag at base
+  blueFlagAtBase: boolean = true; // Is blue flag at its base?
+  redFlagAtBase: boolean = true; // Is red flag at its base?
+  droppedFlags: Array<{ mesh: THREE.Mesh; position: THREE.Vector3; team: Team; respawnTimer: number }> = [];
+  captureZoneSize: number = 4; // 4x4 capture zone
   
   gameMode: GameMode = 'multiplayer';
   
@@ -284,6 +295,10 @@ export class Game {
     this.createWeaponModels();
     this.switchWeaponModel('rifle');
 
+    // Initialize CTF flags
+    this.createFlags();
+    this.createCaptureZones();
+
     // Only spawn bots in multiplayer mode (with bots)
     if (this.gameMode === 'multiplayer') {
       this.spawnTeamBots('blue', 6);
@@ -311,6 +326,264 @@ export class Game {
     document.addEventListener('keyup', this.boundKeyUp);
     document.addEventListener('mousemove', this.boundMouseMove);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  // CTF Flag System Methods
+  private createFlags(): void {
+    // Create blue flag at blue base
+    const blueFlagGeo = new THREE.CylinderGeometry(0.1, 0.1, 2, 8);
+    const blueFlagMat = new THREE.MeshLambertMaterial({ color: 0x4488ff });
+    this.blueFlagMesh = new THREE.Mesh(blueFlagGeo, blueFlagMat);
+    this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getGroundHeight(BLUE_FLAG_POS.x, BLUE_FLAG_POS.z) + 1, BLUE_FLAG_POS.z);
+    this.scene.add(this.blueFlagMesh);
+
+    // Create red flag at red base
+    const redFlagGeo = new THREE.CylinderGeometry(0.1, 0.1, 2, 8);
+    const redFlagMat = new THREE.MeshLambertMaterial({ color: 0xff4444 });
+    this.redFlagMesh = new THREE.Mesh(redFlagGeo, redFlagMat);
+    this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getGroundHeight(RED_FLAG_POS.x, RED_FLAG_POS.z) + 1, RED_FLAG_POS.z);
+    this.scene.add(this.redFlagMesh);
+  }
+
+  private createCaptureZones(): void {
+    // Create blue capture zone (4x4 area)
+    const blueZoneGeo = new THREE.PlaneGeometry(this.captureZoneSize, this.captureZoneSize);
+    const blueZoneMat = new THREE.MeshBasicMaterial({ 
+      color: 0x4488ff, 
+      transparent: true, 
+      opacity: 0.3,
+      side: THREE.DoubleSide
+    });
+    const blueZone = new THREE.Mesh(blueZoneGeo, blueZoneMat);
+    blueZone.rotation.x = -Math.PI / 2;
+    blueZone.position.set(BLUE_FLAG_POS.x, this.world.getGroundHeight(BLUE_FLAG_POS.x, BLUE_FLAG_POS.z) + 0.05, BLUE_FLAG_POS.z);
+    this.scene.add(blueZone);
+
+    // Create red capture zone (4x4 area)
+    const redZoneGeo = new THREE.PlaneGeometry(this.captureZoneSize, this.captureZoneSize);
+    const redZoneMat = new THREE.MeshBasicMaterial({ 
+      color: 0xff4444, 
+      transparent: true, 
+      opacity: 0.3,
+      side: THREE.DoubleSide
+    });
+    const redZone = new THREE.Mesh(redZoneGeo, redZoneMat);
+    redZone.rotation.x = -Math.PI / 2;
+    redZone.position.set(RED_FLAG_POS.x, this.world.getGroundHeight(RED_FLAG_POS.x, RED_FLAG_POS.z) + 0.05, RED_FLAG_POS.z);
+    this.scene.add(redZone);
+  }
+
+  private isInCaptureZone(position: THREE.Vector3, team: Team): boolean {
+    const flagPos = team === 'blue' ? BLUE_FLAG_POS : RED_FLAG_POS;
+    const halfSize = this.captureZoneSize / 2;
+    return Math.abs(position.x - flagPos.x) <= halfSize && 
+           Math.abs(position.z - flagPos.z) <= halfSize;
+  }
+
+  private createDroppedFlag(position: THREE.Vector3, team: Team): void {
+    const flagGeo = new THREE.CylinderGeometry(0.1, 0.1, 2, 8);
+    const flagMat = new THREE.MeshLambertMaterial({ color: team === 'blue' ? 0x4488ff : 0xff4444 });
+    const flagMesh = new THREE.Mesh(flagGeo, flagMat);
+    flagMesh.position.copy(position);
+    flagMesh.position.y = this.world.getGroundHeight(position.x, position.z) + 1;
+    this.scene.add(flagMesh);
+
+    this.droppedFlags.push({
+      mesh: flagMesh,
+      position: position.clone(),
+      team: team,
+      respawnTimer: 30 // 30 seconds to respawn at base
+    });
+  }
+
+  private checkFlagPickup(): void {
+    // Check if player can pick up enemy flag
+    if (!this.player.carryingFlag && !this.player.isDead) {
+      const enemyFlagTeam = this.playerTeam === 'blue' ? 'red' : 'blue';
+      const enemyFlagPos = enemyFlagTeam === 'blue' ? BLUE_FLAG_POS : RED_FLAG_POS;
+      
+      // Check if enemy flag is at base
+      const enemyFlagAtBase = enemyFlagTeam === 'blue' ? this.blueFlagAtBase : this.redFlagAtBase;
+      
+      if (enemyFlagAtBase) {
+        const distToFlag = Math.sqrt(
+          Math.pow(this.player.position.x - enemyFlagPos.x, 2) +
+          Math.pow(this.player.position.z - enemyFlagPos.z, 2)
+        );
+        
+        if (distToFlag < 2) {
+          this.player.carryingFlag = true;
+          if (enemyFlagTeam === 'blue') {
+            this.blueFlagAtBase = false;
+            if (this.blueFlagMesh) this.blueFlagMesh.visible = false;
+          } else {
+            this.redFlagAtBase = false;
+            if (this.redFlagMesh) this.redFlagMesh.visible = false;
+          }
+          this.showMessage(`🚩 ${this.playerTeam.toUpperCase()} picked up the enemy flag!`);
+        }
+      }
+      
+      // Check dropped flags
+      for (let i = this.droppedFlags.length - 1; i >= 0; i--) {
+        const droppedFlag = this.droppedFlags[i];
+        if (droppedFlag.team === enemyFlagTeam) {
+          const distToFlag = this.player.position.distanceTo(droppedFlag.position);
+          if (distToFlag < 2) {
+            this.player.carryingFlag = true;
+            this.scene.remove(droppedFlag.mesh);
+            this.droppedFlags.splice(i, 1);
+            this.showMessage(`🚩 ${this.playerTeam.toUpperCase()} picked up the dropped flag!`);
+          }
+        }
+      }
+    }
+
+    // Check if player captured the flag (brought enemy flag to own base)
+    if (this.player.carryingFlag && this.isInCaptureZone(this.player.position, this.playerTeam)) {
+      this.player.carryingFlag = false;
+      if (this.playerTeam === 'blue') {
+        this.blueCaptures++;
+        this.redFlagAtBase = true;
+        if (this.redFlagMesh) {
+          this.redFlagMesh.visible = true;
+          this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getGroundHeight(RED_FLAG_POS.x, RED_FLAG_POS.z) + 1, RED_FLAG_POS.z);
+        }
+      } else {
+        this.redCaptures++;
+        this.blueFlagAtBase = true;
+        if (this.blueFlagMesh) {
+          this.blueFlagMesh.visible = true;
+          this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getGroundHeight(BLUE_FLAG_POS.x, BLUE_FLAG_POS.z) + 1, BLUE_FLAG_POS.z);
+        }
+      }
+      this.showMessage(`🏆 ${this.playerTeam.toUpperCase()} CAPTURED THE FLAG!`);
+    }
+  }
+
+  private updateDroppedFlags(dt: number): void {
+    for (let i = this.droppedFlags.length - 1; i >= 0; i--) {
+      const droppedFlag = this.droppedFlags[i];
+      droppedFlag.respawnTimer -= dt;
+      
+      // Rotate flag for visual effect
+      droppedFlag.mesh.rotation.y += dt * 2;
+      
+      if (droppedFlag.respawnTimer <= 0) {
+        // Return flag to base
+        this.scene.remove(droppedFlag.mesh);
+        this.droppedFlags.splice(i, 1);
+        
+        if (droppedFlag.team === 'blue') {
+          this.blueFlagAtBase = true;
+          if (this.blueFlagMesh) {
+            this.blueFlagMesh.visible = true;
+            this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getGroundHeight(BLUE_FLAG_POS.x, BLUE_FLAG_POS.z) + 1, BLUE_FLAG_POS.z);
+          }
+        } else {
+          this.redFlagAtBase = true;
+          if (this.redFlagMesh) {
+            this.redFlagMesh.visible = true;
+            this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getGroundHeight(RED_FLAG_POS.x, RED_FLAG_POS.z) + 1, RED_FLAG_POS.z);
+          }
+        }
+        this.showMessage(`🚩 ${droppedFlag.team.toUpperCase()} flag returned to base!`);
+      }
+    }
+  }
+
+  private dropPlayerFlag(): void {
+    if (this.player.carryingFlag) {
+      this.player.carryingFlag = false;
+      const enemyFlagTeam = this.playerTeam === 'blue' ? 'red' : 'blue';
+      this.createDroppedFlag(this.player.position.clone(), enemyFlagTeam);
+      this.showMessage(`💀 ${this.playerTeam.toUpperCase()} dropped the flag!`);
+    }
+  }
+
+  private updateBotFlagLogic(bot: Bot, dt: number, enemyTarget: any, distToEnemy: number): void {
+    const enemyFlagTeam = bot.team === 'blue' ? 'red' : 'blue';
+    const enemyFlagPos = enemyFlagTeam === 'blue' ? BLUE_FLAG_POS : RED_FLAG_POS;
+    const enemyFlagAtBase = enemyFlagTeam === 'blue' ? this.blueFlagAtBase : this.redFlagAtBase;
+
+    // Check if bot can pick up enemy flag
+    if (!bot.carryingFlag && enemyFlagAtBase) {
+      const distToFlag = Math.sqrt(
+        Math.pow(bot.position.x - enemyFlagPos.x, 2) +
+        Math.pow(bot.position.z - enemyFlagPos.z, 2)
+      );
+
+      if (distToFlag < 2) {
+        bot.carryingFlag = true;
+        if (enemyFlagTeam === 'blue') {
+          this.blueFlagAtBase = false;
+          if (this.blueFlagMesh) this.blueFlagMesh.visible = false;
+        } else {
+          this.redFlagAtBase = false;
+          if (this.redFlagMesh) this.redFlagMesh.visible = false;
+        }
+        this.showMessage(`🚩 ${bot.team.toUpperCase()} bot picked up the enemy flag!`);
+      }
+    }
+
+    // Check dropped flags
+    if (!bot.carryingFlag) {
+      for (let i = this.droppedFlags.length - 1; i >= 0; i--) {
+        const droppedFlag = this.droppedFlags[i];
+        if (droppedFlag.team === enemyFlagTeam) {
+          const distToFlag = bot.position.distanceTo(droppedFlag.position);
+          if (distToFlag < 2) {
+            bot.carryingFlag = true;
+            this.scene.remove(droppedFlag.mesh);
+            this.droppedFlags.splice(i, 1);
+            this.showMessage(`🚩 ${bot.team.toUpperCase()} bot picked up the dropped flag!`);
+          }
+        }
+      }
+    }
+
+    // If carrying flag, prioritize returning to base
+    if (bot.carryingFlag) {
+      const ownFlagPos = bot.team === 'blue' ? BLUE_FLAG_POS : RED_FLAG_POS;
+      const distToOwnBase = Math.sqrt(
+        Math.pow(bot.position.x - ownFlagPos.x, 2) +
+        Math.pow(bot.position.z - ownFlagPos.z, 2)
+      );
+
+      // Check if bot captured the flag
+      if (this.isInCaptureZone(bot.position, bot.team)) {
+        bot.carryingFlag = false;
+        if (bot.team === 'blue') {
+          this.blueCaptures++;
+          this.redFlagAtBase = true;
+          if (this.redFlagMesh) {
+            this.redFlagMesh.visible = true;
+            this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getGroundHeight(RED_FLAG_POS.x, RED_FLAG_POS.z) + 1, RED_FLAG_POS.z);
+          }
+        } else {
+          this.redCaptures++;
+          this.blueFlagAtBase = true;
+          if (this.blueFlagMesh) {
+            this.blueFlagMesh.visible = true;
+            this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getGroundHeight(BLUE_FLAG_POS.x, BLUE_FLAG_POS.z) + 1, BLUE_FLAG_POS.z);
+          }
+        }
+        this.showMessage(`🏆 ${bot.team.toUpperCase()} bot CAPTURED THE FLAG!`);
+      } else {
+        // Move toward own base
+        bot.targetPos.set(ownFlagPos.x, bot.position.y, ownFlagPos.z);
+        bot.behaviorState = 'capture';
+      }
+    }
+  }
+
+  private dropBotFlag(bot: Bot): void {
+    if (bot.carryingFlag) {
+      bot.carryingFlag = false;
+      const enemyFlagTeam = bot.team === 'blue' ? 'red' : 'blue';
+      this.createDroppedFlag(bot.position.clone(), enemyFlagTeam);
+      this.showMessage(`💀 ${bot.team.toUpperCase()} bot dropped the flag!`);
+    }
   }
 
   private onResize(): void {
@@ -1011,6 +1284,9 @@ export class Game {
         weaponMesh: weaponMesh,
         isAiming: false,
         aimTransition: 0,
+        // CTF flag system
+        carryingFlag: false,
+        flagMesh: null,
       });
     }
   }
@@ -1490,6 +1766,9 @@ export class Game {
       const distToEnemy = enemyTarget ? bot.position.distanceTo(enemyTarget.pos) : Infinity;
       const hpPercent = bot.hp / bot.maxHp;
 
+      // CTF Flag Logic for Bots
+      this.updateBotFlagLogic(bot, dt, enemyTarget, distToEnemy);
+
       // Update cooldowns
       bot.jumpCooldown = Math.max(0, bot.jumpCooldown - dt);
       bot.dodgeTimer = Math.max(0, bot.dodgeTimer - dt);
@@ -1878,6 +2157,7 @@ export class Game {
       }
 
       if (bot.position.y < -10) {
+        this.dropBotFlag(bot);
         bot.isDead = true;
         bot.respawnTimer = 2;
         bot.mesh.visible = false;
@@ -1945,6 +2225,7 @@ export class Game {
               // We can't directly set lastDamageTime on player, but we track it
             }
             if (this.player.isDead) {
+              this.dropPlayerFlag();
               this.redKills++;
               this.sounds.death();
               this.showMessage('You were eliminated by ' + TEAM_COLORS[bot.team].label + ' team!');
@@ -1956,6 +2237,7 @@ export class Game {
             enemyTarget.bot.lastDamageTime = performance.now() / 1000;
             enemyTarget.bot.dodgeTimer = 0.5; // Trigger dodge
             if (enemyTarget.bot.hp <= 0) {
+              this.dropBotFlag(enemyTarget.bot);
               enemyTarget.bot.isDead = true;
               enemyTarget.bot.respawnTimer = 8;
               enemyTarget.bot.mesh.visible = false;
@@ -2142,6 +2424,7 @@ export class Game {
           this.showMessage('🏁 RED BOT CAPTURED THE FLAG!');
         }
         // Respawn bot at their base
+        this.dropBotFlag(bot);
         bot.isDead = true;
         bot.respawnTimer = 5;
       }
@@ -2163,6 +2446,10 @@ export class Game {
     if (wasDead && !this.player.isDead) {
       this.sounds.respawn();
     }
+
+    // CTF Flag System Updates
+    this.checkFlagPickup();
+    this.updateDroppedFlags(dt);
 
     const targetTransition = this.isAiming ? 1 : 0;
     this.aimTransition += (targetTransition - this.aimTransition) * Math.min(dt * 10, 1);

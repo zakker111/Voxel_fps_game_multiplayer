@@ -25,6 +25,10 @@ export class Player {
   respawnTimer: number = 0;
   targetInfo: string = '';
   team: 'red' | 'blue' = 'blue';
+  
+  // CTF flag system
+  carryingFlag: boolean = false;
+  flagMesh: THREE.Mesh | null = null;
 
   // Smooth gameplay features
   headBobTime: number = 0;
