@@ -333,14 +333,18 @@ export class Game {
     this.muzzleTimer = 0.05;
 
     const dir = this.player.getAimDirection();
+    
+    // Offset bullet origin slightly forward to align with weapon sights
+    // This simulates the bullet coming from the weapon muzzle, not the eye
+    const muzzleOffset = this.isAiming ? 0.8 : 0.5;
+    const origin = this.player.camera.position.clone().add(dir.clone().multiplyScalar(muzzleOffset));
+    
     const spreadMultiplier = this.isAiming ? 0.3 : 1.0;
     const actualSpread = weapon.spread * spreadMultiplier;
     dir.x += (Math.random() - 0.5) * actualSpread;
     dir.y += (Math.random() - 0.5) * actualSpread;
     dir.z += (Math.random() - 0.5) * actualSpread;
     dir.normalize();
-
-    const origin = this.player.camera.position.clone();
 
     let hitBot = false;
     let closestDist = Infinity;
@@ -444,8 +448,8 @@ export class Game {
     this.pickaxeAnimationTime = 0;
     this.isPickaxeAnimating = true;
 
-    const origin = this.player.camera.position.clone();
     const dir = this.player.getAimDirection();
+    const origin = this.player.camera.position.clone().add(dir.clone().multiplyScalar(0.5));
     const hit = this.world.raycast(origin, dir, 5);
 
     if (hit && this.world.canDig(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z)) {
@@ -479,8 +483,8 @@ export class Game {
     this.lastActionTime = now;
     this.sounds.spadeHit();
 
-    const origin = this.player.camera.position.clone();
     const dir = this.player.getAimDirection();
+    const origin = this.player.camera.position.clone().add(dir.clone().multiplyScalar(0.5));
     const hit = this.world.raycast(origin, dir, 5);
 
     if (hit) {
@@ -517,8 +521,8 @@ export class Game {
       return;
     }
 
-    const origin = this.player.camera.position.clone();
     const dir = this.player.getAimDirection();
+    const origin = this.player.camera.position.clone().add(dir.clone().multiplyScalar(0.5));
     const hit = this.world.raycast(origin, dir, 6);
 
     if (hit) {
@@ -1412,8 +1416,8 @@ export class Game {
       return;
     }
 
-    const origin = this.player.camera.position.clone();
     const dir = this.player.getAimDirection();
+    const origin = this.player.camera.position.clone().add(dir.clone().multiplyScalar(0.5));
     const hit = this.world.raycast(origin, dir, 8);
 
     if (hit) {
