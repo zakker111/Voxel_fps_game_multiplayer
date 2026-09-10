@@ -133,6 +133,14 @@ export class Game {
   // Death animation
   deathAnimations: Map<string, { mesh: THREE.Group; timer: number; startPos: THREE.Vector3 }> = new Map();
   
+  // Bullet tracers
+  bulletTracers: Array<{
+    mesh: THREE.Mesh;
+    velocity: THREE.Vector3;
+    life: number;
+    maxLife: number;
+  }> = [];
+  
   gameMode: GameMode = 'multiplayer';
   
   // Multiplayer networking
@@ -268,8 +276,8 @@ export class Game {
       this.performAction();
     } else if (e.button === 2) {
       if (this.equipment === 'rifle' || this.equipment === 'smg') {
+        // Right-click ONLY toggles ADS, does NOT shoot
         this.isAiming = !this.isAiming;
-        this.performAction();
       } else {
         this.buildMode = true;
         this.tryBuild();
@@ -345,27 +353,30 @@ export class Game {
     if (this.equipment === 'rifle') this.sounds.rifleShot();
     else if (this.equipment === 'smg') this.sounds.smgShot();
 
+    // Calculate muzzle position (at weapon model, not camera)
+    const dir = this.player.getAimDirection();
+    const muzzleOffset = this.isAiming ? 0.8 : 0.5;
+    const muzzlePos = this.player.camera.position.clone().add(dir.clone().multiplyScalar(muzzleOffset));
+    
+    // Position muzzle flash at weapon muzzle
     this.muzzleFlash.intensity = 3;
-    this.muzzleFlash.position.copy(this.player.camera.position);
+    this.muzzleFlash.position.copy(muzzlePos);
     this.muzzleTimer = 0.05;
 
     // Add camera shake when shooting
     const shakeIntensity = this.equipment === 'rifle' ? 0.03 : 0.02;
     this.player.addCameraShake(shakeIntensity);
-
-    const dir = this.player.getAimDirection();
     
-    // Offset bullet origin slightly forward to align with weapon sights
-    // This simulates the bullet coming from the weapon muzzle, not the eye
-    const muzzleOffset = this.isAiming ? 0.8 : 0.5;
-    const origin = this.player.camera.position.clone().add(dir.clone().multiplyScalar(muzzleOffset));
+    // Create bullet tracer
+    this.createBulletTracer(muzzlePos, dir.clone());
     
     const spreadMultiplier = this.isAiming ? 0.3 : 1.0;
     const actualSpread = weapon.spread * spreadMultiplier;
-    dir.x += (Math.random() - 0.5) * actualSpread;
-    dir.y += (Math.random() - 0.5) * actualSpread;
-    dir.z += (Math.random() - 0.5) * actualSpread;
-    dir.normalize();
+    const shootDir = dir.clone();
+    shootDir.x += (Math.random() - 0.5) * actualSpread;
+    shootDir.y += (Math.random() - 0.5) * actualSpread;
+    shootDir.z += (Math.random() - 0.5) * actualSpread;
+    shootDir.normalize();
 
     let hitBot = false;
     let closestDist = Infinity;
@@ -378,11 +389,11 @@ export class Game {
       const botCenter = bot.position.clone();
       botCenter.y += bot.headY * 0.5;
 
-      const toBot = botCenter.clone().sub(origin);
-      const dot = toBot.dot(dir);
+      const toBot = botCenter.clone().sub(muzzlePos);
+      const dot = toBot.dot(shootDir);
       if (dot < 0) continue;
 
-      const closest = origin.clone().add(dir.clone().multiplyScalar(dot));
+      const closest = muzzlePos.clone().add(shootDir.clone().multiplyScalar(dot));
       const dist = closest.distanceTo(botCenter);
 
       const headCenter = bot.position.clone();
@@ -401,7 +412,7 @@ export class Game {
 
     // Check for voxel hits if no bot was hit
     if (!hitBot) {
-      const voxelHit = this.world.raycast(origin, dir, 100);
+      const voxelHit = this.world.raycast(muzzlePos, shootDir, 100);
       if (voxelHit) {
         const voxel = this.world.getVoxel(voxelHit.voxelPos.x, voxelHit.voxelPos.y, voxelHit.voxelPos.z);
         if (voxel) {
@@ -458,6 +469,103 @@ export class Game {
         this.showMessage(`Hit! ${closestBot.hp} HP remaining`);
       }
     }
+  }
+
+  private createBulletTracer(origin: THREE.Vector3, direction: THREE.Vector3): void {
+    // Create a small elongated box for the bullet tracer
+    const tracerLength = 0.5;
+    const tracerWidth = 0.02;
+    const geometry = new THREE.BoxGeometry(tracerWidth, tracerWidth, tracerLength);
+    const material = new THREE.MeshBasicMaterial({ 
+      color: 0xffff00,
+      transparent: true,
+      opacity: 0.8
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    
+    // Position at origin
+    mesh.position.copy(origin);
+    
+    // Rotate to face direction
+    mesh.lookAt(origin.clone().add(direction));
+    
+    this.scene.add(mesh);
+    
+    // Add to tracers array with velocity and life
+    const speed = 200; // units per second
+    const velocity = direction.clone().multiplyScalar(speed);
+    
+    this.bulletTracers.push({
+      mesh,
+      velocity,
+      life: 0,
+      maxLife: 0.5 // 0.5 seconds lifetime
+    });
+  }
+
+  private updateBulletTracers(dt: number): void {
+    for (let i = this.bulletTracers.length - 1; i >= 0; i--) {
+      const tracer = this.bulletTracers[i];
+      
+      // Update position
+      tracer.mesh.position.add(tracer.velocity.clone().multiplyScalar(dt));
+      
+      // Update life
+      tracer.life += dt;
+      
+      // Fade out
+      const lifeRatio = tracer.life / tracer.maxLife;
+      (tracer.mesh.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - lifeRatio);
+      
+      // Remove if expired
+      if (tracer.life >= tracer.maxLife) {
+        this.scene.remove(tracer.mesh);
+        tracer.mesh.geometry.dispose();
+        (tracer.mesh.material as THREE.Material).dispose();
+        this.bulletTracers.splice(i, 1);
+      }
+    }
+  }
+
+  private createBuildEffect(x: number, y: number, z: number): void {
+    // Create a quick expanding ring effect
+    const geometry = new THREE.RingGeometry(0.3, 0.5, 16);
+    const material = new THREE.MeshBasicMaterial({ 
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide
+    });
+    const ring = new THREE.Mesh(geometry, material);
+    
+    // Position at the built voxel
+    ring.position.set(x + 0.5, y + 0.5, z + 0.5);
+    
+    // Rotate to face camera
+    ring.lookAt(this.player.camera.position);
+    
+    this.scene.add(ring);
+    
+    // Animate the ring
+    let scale = 1;
+    let opacity = 0.8;
+    const animate = () => {
+      scale += 0.1;
+      opacity -= 0.05;
+      
+      ring.scale.set(scale, scale, scale);
+      material.opacity = opacity;
+      
+      if (opacity > 0) {
+        requestAnimationFrame(animate);
+      } else {
+        this.scene.remove(ring);
+        geometry.dispose();
+        material.dispose();
+      }
+    };
+    
+    animate();
   }
 
   private usePickaxe(now: number): void {
@@ -568,6 +676,9 @@ export class Game {
         // Chunk automatically marked dirty by setVoxel
         this.sounds.buildPlace();
         this.showMessage(`Built! (Inventory: ${this.inventory})`);
+        
+        // Create build effect (quick flash)
+        this.createBuildEffect(px, py, pz);
       } else if (this.world.isSolid(px, py, pz)) {
         this.showMessage('Position occupied');
       } else {
@@ -1569,13 +1680,12 @@ export class Game {
     const hit = this.world.raycast(origin, dir, 8);
 
     if (hit) {
+      // Show highlight for tools (not weapons)
       if (this.equipment === 'rifle' || this.equipment === 'smg') {
         this.highlightMesh.visible = false;
-        this.buildPreviewMesh.visible = false;
       } else {
         this.highlightMesh.visible = true;
         this.highlightMesh.position.set(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z);
-        this.buildPreviewMesh.visible = false;
       }
 
       const dist = hit.distance.toFixed(1);
@@ -1585,14 +1695,38 @@ export class Game {
         this.player.targetInfo = `${names[v.type] || 'Voxel'} | Durability: ${v.durability}/3 | ${dist}m`;
       }
 
-      if (this.buildMode || (this.equipment !== 'rifle' && this.equipment !== 'smg')) {
+      // Show build preview when we have inventory and not using weapons
+      if (this.inventory > 0 && this.equipment !== 'rifle' && this.equipment !== 'smg') {
         const px = hit.voxelPos.x + Math.round(hit.normal.x);
         const py = hit.voxelPos.y + Math.round(hit.normal.y);
         const pz = hit.voxelPos.z + Math.round(hit.normal.z);
-        if (!this.world.isSolid(px, py, pz) && this.world.canBuild(px, py, pz)) {
+        
+        // Check if can build here
+        const canBuildHere = !this.world.isSolid(px, py, pz) && this.world.canBuild(px, py, pz);
+        
+        // Check if not inside player
+        const voxelCenter = new THREE.Vector3(px + 0.5, py + 0.5, pz + 0.5);
+        const playerMin = this.player.position.clone().sub(new THREE.Vector3(this.player.radius, 0, this.player.radius));
+        const playerMax = this.player.position.clone().add(new THREE.Vector3(this.player.radius, this.player.currentHeight, this.player.radius));
+        const insidePlayer = voxelCenter.x >= playerMin.x && voxelCenter.x <= playerMax.x &&
+                            voxelCenter.y >= playerMin.y && voxelCenter.y <= playerMax.y &&
+                            voxelCenter.z >= playerMin.z && voxelCenter.z <= playerMax.z;
+        
+        if (canBuildHere && !insidePlayer) {
           this.buildPreviewMesh.visible = true;
           this.buildPreviewMesh.position.set(px, py, pz);
+          // Green color for valid placement
+          (this.buildPreviewMesh.material as THREE.MeshBasicMaterial).color.setHex(0x00ff00);
+          (this.buildPreviewMesh.material as THREE.MeshBasicMaterial).opacity = 0.5;
+        } else {
+          this.buildPreviewMesh.visible = true;
+          this.buildPreviewMesh.position.set(px, py, pz);
+          // Red color for invalid placement
+          (this.buildPreviewMesh.material as THREE.MeshBasicMaterial).color.setHex(0xff0000);
+          (this.buildPreviewMesh.material as THREE.MeshBasicMaterial).opacity = 0.3;
         }
+      } else {
+        this.buildPreviewMesh.visible = false;
       }
     } else {
       this.highlightMesh.visible = false;
@@ -1686,6 +1820,9 @@ export class Game {
         this.deathAnimations.delete(uuid);
       }
     }
+
+    // Update bullet tracers
+    this.updateBulletTracers(dt);
 
     this.updateBots(dt);
     
