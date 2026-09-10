@@ -1781,34 +1781,70 @@ export class Game {
           break;
       }
 
-      // MOVEMENT
+      // MOVEMENT - FIXED: Allow movement in both X and Z simultaneously
       const toTarget = bot.targetPos.clone().sub(bot.position);
       toTarget.y = 0;
       const distToTarget = toTarget.length();
       
-      if (distToTarget > 0.5) {
+      // Add small threshold to prevent micro-movements
+      if (distToTarget > 0.3) {
         toTarget.normalize();
         // FASTER SPEED: 10 units/sec normal, 3 when crouching (slower)
         const speed = bot.isCrouching ? 3 : 10;
-        const newX = bot.position.x + toTarget.x * speed * dt;
-        const newZ = bot.position.z + toTarget.z * speed * dt;
+        const moveX = toTarget.x * speed * dt;
+        const moveZ = toTarget.z * speed * dt;
+        const newX = bot.position.x + moveX;
+        const newZ = bot.position.z + moveZ;
 
-        bot.isMoving = true;
+        // Try to move in BOTH directions independently (not else if)
+        let movedX = false;
+        let movedZ = false;
         
-        if (this.botCanMoveTo(newX, bot.position.z, bot.position.y)) {
+        // Only move if the movement is significant enough
+        if (Math.abs(moveX) > 0.01 && this.botCanMoveTo(newX, bot.position.z, bot.position.y)) {
           bot.position.x = newX;
-        } else if (this.botCanMoveTo(bot.position.x, newZ, bot.position.y)) {
+          movedX = true;
+        }
+        
+        if (Math.abs(moveZ) > 0.01 && this.botCanMoveTo(bot.position.x, newZ, bot.position.y)) {
           bot.position.z = newZ;
-        } else if (bot.grounded && bot.jumpCooldown <= 0) {
+          movedZ = true;
+        }
+        
+        // Only set isMoving if actually moved
+        bot.isMoving = movedX || movedZ;
+        
+        // If completely stuck, try to find alternative path
+        if (!bot.isMoving && bot.grounded && bot.jumpCooldown <= 0) {
           // Jump over obstacle
           bot.velocity.y = 8;
           bot.jumpCooldown = 1.5;
+          bot.isMoving = true;
+        } else if (!bot.isMoving) {
+          // If still stuck after jump cooldown, pick new target
+          bot.stuckTimer += dt;
+          if (bot.stuckTimer > 0.5) {
+            // Pick a random nearby position to unstick
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 3 + Math.random() * 5;
+            bot.targetPos.set(
+              bot.position.x + Math.cos(angle) * dist,
+              bot.position.y,
+              bot.position.z + Math.sin(angle) * dist
+            );
+            bot.stuckTimer = 0;
+          }
+        } else {
+          bot.stuckTimer = 0;
         }
 
         // Set target yaw - ALWAYS face movement direction when moving
-        bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
+        if (bot.isMoving) {
+          bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
+        }
       } else {
         bot.isMoving = false;
+        bot.stuckTimer = 0;
         // When not moving, face enemy if in combat range
         if (enemyTarget && distToEnemy < 40) {
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
@@ -1938,16 +1974,21 @@ export class Game {
       bot.currentYaw += normalizedDiff * Math.min(dt * 10, 1); // Faster rotation
       bot.mesh.rotation.y = bot.currentYaw;
       
-      // Weapon aiming animation
+      // Weapon aiming animation - FIXED: Smooth interpolation
       if (bot.weaponMesh) {
-        const aimOffset = bot.aimTransition * 0.15; // Move weapon forward when aiming
         const hipPosition = new THREE.Vector3(0.3, 1.0, -0.2);
         const aimPosition = new THREE.Vector3(0.1, 1.1, -0.35);
         
-        bot.weaponMesh.position.lerpVectors(hipPosition, aimPosition, bot.aimTransition);
+        // Store target position
+        const targetPosition = new THREE.Vector3();
+        targetPosition.lerpVectors(hipPosition, aimPosition, bot.aimTransition);
         
-        // Slight tilt when aiming
-        bot.weaponMesh.rotation.x = bot.aimTransition * 0.1;
+        // Smoothly interpolate current position towards target
+        bot.weaponMesh.position.lerp(targetPosition, Math.min(dt * 10, 1));
+        
+        // Smooth rotation towards target
+        const targetRotationX = bot.aimTransition * 0.1;
+        bot.weaponMesh.rotation.x += (targetRotationX - bot.weaponMesh.rotation.x) * Math.min(dt * 10, 1);
       }
       
       // Walking animation
