@@ -78,10 +78,10 @@ const TEAM_COLORS: Record<Team, { body: number; accent: number; legs: number; la
   blue: { body: 0x2244cc, accent: 0x4488ff, legs: 0x112266, label: 'BLUE' },
 };
 
-const BLUE_SPAWN_Z_MIN = -60;
-const BLUE_SPAWN_Z_MAX = -30;
-const RED_SPAWN_Z_MIN = 30;
-const RED_SPAWN_Z_MAX = 60;
+const BLUE_SPAWN_Z_MIN = -100;
+const BLUE_SPAWN_Z_MAX = -85;
+const RED_SPAWN_Z_MIN = 85;
+const RED_SPAWN_Z_MAX = 100;
 const SPAWN_X_RANGE = 40;
 
 const BLUE_FLAG_POS = { x: 0, z: -80 };
@@ -331,6 +331,10 @@ export class Game {
     this.muzzleFlash.intensity = 3;
     this.muzzleFlash.position.copy(this.player.camera.position);
     this.muzzleTimer = 0.05;
+
+    // Add camera shake when shooting
+    const shakeIntensity = this.equipment === 'rifle' ? 0.03 : 0.02;
+    this.player.addCameraShake(shakeIntensity);
 
     const dir = this.player.getAimDirection();
     
@@ -975,6 +979,94 @@ export class Game {
     return true;
   }
 
+  // AI Awareness: Find nearby cover
+  private findNearbyCover(bot: Bot, enemyPos: THREE.Vector3): THREE.Vector3 | null {
+    const searchRadius = 10;
+    const coverPositions: { pos: THREE.Vector3; score: number }[] = [];
+
+    // Search in a grid around the bot
+    for (let dx = -searchRadius; dx <= searchRadius; dx += 2) {
+      for (let dz = -searchRadius; dz <= searchRadius; dz += 2) {
+        const checkX = bot.position.x + dx;
+        const checkZ = bot.position.z + dz;
+        const groundY = this.world.getGroundHeight(checkX, checkZ);
+
+        // Check if there's a wall/voxel nearby that can provide cover
+        const hasCover = 
+          this.world.isSolid(Math.floor(checkX + 1), Math.floor(groundY + 0.5), Math.floor(checkZ)) ||
+          this.world.isSolid(Math.floor(checkX - 1), Math.floor(groundY + 0.5), Math.floor(checkZ)) ||
+          this.world.isSolid(Math.floor(checkX), Math.floor(groundY + 0.5), Math.floor(checkZ + 1)) ||
+          this.world.isSolid(Math.floor(checkX), Math.floor(groundY + 0.5), Math.floor(checkZ - 1));
+
+        if (hasCover) {
+          // Score based on distance to bot and how well it blocks enemy view
+          const distToBot = Math.sqrt(dx * dx + dz * dz);
+          const toEnemy = enemyPos.clone().sub(new THREE.Vector3(checkX, groundY, checkZ)).normalize();
+          const coverDirection = new THREE.Vector3(dx, 0, dz).normalize();
+          const alignment = Math.abs(toEnemy.dot(coverDirection));
+          
+          const score = (1 / (distToBot + 1)) * (1 + alignment);
+          coverPositions.push({
+            pos: new THREE.Vector3(checkX, groundY, checkZ),
+            score
+          });
+        }
+      }
+    }
+
+    if (coverPositions.length === 0) return null;
+
+    // Return best cover position
+    coverPositions.sort((a, b) => b.score - a.score);
+    return coverPositions[0].pos;
+  }
+
+  // AI Awareness: Check for edges/cliffs
+  private isNearEdge(bot: Bot): boolean {
+    const checkDist = 1.5;
+    const directions = [
+      { x: checkDist, z: 0 },
+      { x: -checkDist, z: 0 },
+      { x: 0, z: checkDist },
+      { x: 0, z: -checkDist }
+    ];
+
+    const currentY = this.world.getGroundHeight(bot.position.x, bot.position.z);
+
+    for (const dir of directions) {
+      const checkX = bot.position.x + dir.x;
+      const checkZ = bot.position.z + dir.z;
+      const checkY = this.world.getGroundHeight(checkX, checkZ);
+      
+      // If there's a significant drop, it's an edge
+      if (currentY - checkY > 2) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // AI Awareness: Check for obstacles in path
+  private hasObstacleInPath(bot: Bot, targetPos: THREE.Vector3): boolean {
+    const direction = targetPos.clone().sub(bot.position).normalize();
+    const checkDist = 3;
+    
+    for (let i = 1; i <= checkDist; i++) {
+      const checkX = bot.position.x + direction.x * i;
+      const checkZ = bot.position.z + direction.z * i;
+      const groundY = this.world.getGroundHeight(checkX, checkZ);
+      
+      // Check if there's a wall at body or head height
+      if (this.world.isSolid(Math.floor(checkX + 0.5), Math.floor(groundY + 0.5), Math.floor(checkZ + 0.5)) ||
+          this.world.isSolid(Math.floor(checkX + 0.5), Math.floor(groundY + 1.5), Math.floor(checkZ + 0.5))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private updateBots(dt: number): void {
     for (const bot of this.bots) {
       if (bot.isDead) {
@@ -1018,7 +1110,31 @@ export class Game {
       }
       bot.lastPos.copy(bot.position);
 
+      // AI Awareness: Check for edges and avoid them
+      if (this.isNearEdge(bot) && bot.grounded && bot.jumpCooldown <= 0) {
+        // Jump away from edge
+        bot.velocity.y = 8;
+        bot.jumpCooldown = 2;
+        // Move backward from edge
+        const awayFromEdge = bot.position.clone().sub(bot.targetPos).normalize();
+        bot.targetPos.copy(bot.position).add(awayFromEdge.multiplyScalar(5));
+      }
+
       if (bot.stuckTimer > 1.0) {
+        // Check if there's an obstacle in the path
+        if (this.hasObstacleInPath(bot, bot.targetPos)) {
+          // Try to find alternative path
+          const alternativeAngle = (Math.random() > 0.5 ? 1 : -1) * Math.PI / 4;
+          const toTarget = bot.targetPos.clone().sub(bot.position);
+          const rotatedX = toTarget.x * Math.cos(alternativeAngle) - toTarget.z * Math.sin(alternativeAngle);
+          const rotatedZ = toTarget.x * Math.sin(alternativeAngle) + toTarget.z * Math.cos(alternativeAngle);
+          bot.targetPos.set(
+            bot.position.x + rotatedX,
+            bot.position.y,
+            bot.position.z + rotatedZ
+          );
+        }
+        
         // Jump when stuck
         if (bot.grounded && bot.jumpCooldown <= 0) {
           bot.velocity.y = 8;
@@ -1221,6 +1337,22 @@ export class Game {
         case 'cover':
           bot.coverTimer -= dt;
           bot.isCrouching = true;
+          
+          // AI Awareness: Find and move to nearby cover
+          if (enemyTarget && bot.coverTimer > 0.5) {
+            const coverPosition = this.findNearbyCover(bot, enemyTarget.pos);
+            if (coverPosition) {
+              const distToCover = bot.position.distanceTo(coverPosition);
+              if (distToCover > 1) {
+                // Move toward cover
+                bot.targetPos.copy(coverPosition);
+              } else {
+                // Already in cover, stay put
+                bot.targetPos.copy(bot.position);
+              }
+            }
+          }
+
           if (bot.coverTimer <= 0) {
             // Time to peek out and shoot
             bot.behaviorState = 'peek';
@@ -1234,7 +1366,6 @@ export class Game {
               bot.jumpCooldown = 2;
             }
           }
-          bot.targetPos.copy(bot.position);
           break;
       }
 
@@ -1475,6 +1606,10 @@ export class Game {
     if (this.currentWeaponModel) {
       const targetPos = new THREE.Vector3().lerpVectors(this.hipPosition, this.adsPosition, this.aimTransition);
       this.currentWeaponModel.position.lerp(targetPos, Math.min(dt * 10, 1));
+      
+      // Apply weapon sway
+      this.currentWeaponModel.position.x += this.player.weaponSwayX;
+      this.currentWeaponModel.position.y += this.player.weaponSwayY;
     }
 
     const targetFov = this.isAiming ? 50 : 75;

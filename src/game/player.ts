@@ -25,6 +25,15 @@ export class Player {
   respawnTimer: number = 0;
   targetInfo: string = '';
 
+  // Smooth gameplay features
+  headBobTime: number = 0;
+  headBobIntensity: number = 0;
+  weaponSwayX: number = 0;
+  weaponSwayY: number = 0;
+  cameraShake: number = 0;
+  landingImpact: number = 0;
+  private lastVelocityY: number = 0;
+
   private keys: Set<string> = new Set();
   private crouchKeyPressed: boolean = false;
   private world: VoxelWorld;
@@ -80,6 +89,9 @@ export class Player {
     this.yaw -= dx * this.sensitivity;
     this.pitch -= dy * this.sensitivity;
     this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
+    
+    // Add weapon sway based on mouse movement
+    this.addWeaponSway(dx, dy);
   }
 
   jump(): void {
@@ -319,14 +331,67 @@ export class Player {
       newPos.copy(pushedPos);
     }
 
+    // Detect landing impact
+    if (this.isGrounded && this.lastVelocityY < -5) {
+      this.landingImpact = Math.min(Math.abs(this.lastVelocityY) * 0.02, 0.15);
+    }
+    this.lastVelocityY = this.velocity.y;
+
     this.position.copy(newPos);
-    this.updateCamera();
+    this.updateCamera(dt);
   }
 
-  updateCamera(): void {
+  updateCamera(dt: number = 0.016): void {
+    // Calculate head bobbing
+    const horizontalSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
+    if (this.isGrounded && horizontalSpeed > 0.5) {
+      const bobSpeed = this.isSprinting ? 12 : 8;
+      const bobAmount = this.isSprinting ? 0.06 : 0.04;
+      this.headBobTime += dt * bobSpeed;
+      this.headBobIntensity = Math.sin(this.headBobTime) * bobAmount;
+    } else {
+      this.headBobIntensity *= 0.9; // Smooth fade out
+    }
+
+    // Calculate weapon sway based on mouse movement
+    const swayDecay = 0.85;
+    this.weaponSwayX *= swayDecay;
+    this.weaponSwayY *= swayDecay;
+
+    // Apply landing impact decay
+    this.landingImpact *= 0.9;
+
+    // Apply camera shake decay
+    this.cameraShake *= 0.9;
+
     this.camera.position.copy(this.position);
     this.camera.position.y += this.currentHeight * 0.85;
+    
+    // Apply head bobbing
+    this.camera.position.y += this.headBobIntensity;
+    
+    // Apply landing impact (camera dip)
+    this.camera.position.y -= this.landingImpact;
+    
+    // Apply camera shake
+    if (this.cameraShake > 0.001) {
+      this.camera.position.x += (Math.random() - 0.5) * this.cameraShake;
+      this.camera.position.y += (Math.random() - 0.5) * this.cameraShake;
+    }
+    
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+  }
+
+  addWeaponSway(dx: number, dy: number): void {
+    this.weaponSwayX += dx * 0.001;
+    this.weaponSwayY += dy * 0.001;
+    // Clamp sway
+    this.weaponSwayX = Math.max(-0.05, Math.min(0.05, this.weaponSwayX));
+    this.weaponSwayY = Math.max(-0.05, Math.min(0.05, this.weaponSwayY));
+  }
+
+  addCameraShake(intensity: number): void {
+    this.cameraShake = Math.max(this.cameraShake, intensity);
   }
 
   getEyePosition(): THREE.Vector3 {
