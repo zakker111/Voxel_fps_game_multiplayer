@@ -795,6 +795,16 @@ export class Game {
         const voxel = this.world.getVoxel(voxelHit.voxelPos.x, voxelHit.voxelPos.y, voxelHit.voxelPos.z);
         if (voxel) {
           const { x, y, z } = voxelHit.voxelPos;
+          
+          // Check if voxel is in capture zone (indestructible)
+          const isInBlueZone = this.isInCaptureZone(new THREE.Vector3(x, y, z), 'blue');
+          const isInRedZone = this.isInCaptureZone(new THREE.Vector3(x, y, z), 'red');
+          
+          if (isInBlueZone || isInRedZone) {
+            // Voxel is in capture zone, cannot be damaged
+            return;
+          }
+          
           // Damage any voxel (not just built ones)
           const result = this.world.damageVoxel(x, y, z, 1);
           
@@ -1089,6 +1099,17 @@ export class Game {
 
     if (hit && this.world.canDig(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z)) {
       const { x, y, z } = hit.voxelPos;
+      
+      // Check if voxel is in capture zone (indestructible)
+      const isInBlueZone = this.isInCaptureZone(new THREE.Vector3(x, y, z), 'blue');
+      const isInRedZone = this.isInCaptureZone(new THREE.Vector3(x, y, z), 'red');
+      
+      if (isInBlueZone || isInRedZone) {
+        // Voxel is in capture zone, cannot be damaged
+        this.showMessage('Cannot damage capture zone!');
+        return;
+      }
+      
       // Destroy voxel instantly (1 hit = 1 voxel)
       const result = this.world.damageVoxel(x, y, z, 3);
 
@@ -1125,6 +1146,16 @@ export class Game {
         const vx = hit.voxelPos.x + Math.round(hit.normal.x) * i;
         const vy = hit.voxelPos.y + Math.round(hit.normal.y) * i;
         const vz = hit.voxelPos.z + Math.round(hit.normal.z) * i;
+        
+        // Check if voxel is in capture zone (indestructible)
+        const isInBlueZone = this.isInCaptureZone(new THREE.Vector3(vx, vy, vz), 'blue');
+        const isInRedZone = this.isInCaptureZone(new THREE.Vector3(vx, vy, vz), 'red');
+        
+        if (isInBlueZone || isInRedZone) {
+          // Voxel is in capture zone, cannot be damaged
+          continue;
+        }
+        
         if (this.world.canDig(vx, vy, vz)) {
           const result = this.world.damageVoxel(vx, vy, vz, 3); // Spade destroys instantly
           if (result.destroyed) {
@@ -1773,14 +1804,27 @@ export class Game {
       bot.jumpCooldown = Math.max(0, bot.jumpCooldown - dt);
       bot.dodgeTimer = Math.max(0, bot.dodgeTimer - dt);
 
-      // Detect stuck
+      // Detect stuck - improved detection
       const moveDist = bot.position.distanceTo(bot.lastPos);
-      if (moveDist < 0.01) {
+      if (moveDist < 0.05) { // Increased threshold
         bot.stuckTimer += dt;
       } else {
         bot.stuckTimer = 0;
       }
       bot.lastPos.copy(bot.position);
+      
+      // Jump when stuck - more aggressive jumping
+      if (bot.stuckTimer > 0.3 && bot.grounded && bot.jumpCooldown <= 0) {
+        bot.velocity.y = 9; // Stronger jump
+        bot.jumpCooldown = 1.0; // Shorter cooldown
+        bot.stuckTimer = 0;
+        
+        // Also try to move in a random direction
+        const randomAngle = Math.random() * Math.PI * 2;
+        const escapeX = bot.position.x + Math.cos(randomAngle) * 2;
+        const escapeZ = bot.position.z + Math.sin(randomAngle) * 2;
+        bot.targetPos.set(escapeX, bot.position.y, escapeZ);
+      }
 
       // AI Awareness: Check for edges and avoid them
       if (this.isNearEdge(bot) && bot.grounded && bot.jumpCooldown <= 0) {
@@ -2096,34 +2140,13 @@ export class Game {
         
         // Only set isMoving if actually moved
         bot.isMoving = movedX || movedZ;
-        
-        // If completely stuck, try to find alternative path
-        if (!bot.isMoving && bot.grounded && bot.jumpCooldown <= 0) {
-          // Jump over obstacle
-          bot.velocity.y = 8;
-          bot.jumpCooldown = 1.5;
-          bot.isMoving = true;
-        } else if (!bot.isMoving) {
-          // If still stuck after jump cooldown, pick new target
-          bot.stuckTimer += dt;
-          if (bot.stuckTimer > 0.5) {
-            // Pick a random nearby position to unstick
-            const angle = Math.random() * Math.PI * 2;
-            const dist = 3 + Math.random() * 5;
-            bot.targetPos.set(
-              bot.position.x + Math.cos(angle) * dist,
-              bot.position.y,
-              bot.position.z + Math.sin(angle) * dist
-            );
-            bot.stuckTimer = 0;
-          }
-        } else {
-          bot.stuckTimer = 0;
-        }
 
-        // Set target yaw - ALWAYS face enemy when in combat, otherwise face movement
-        if (enemyTarget && distToEnemy < 50) {
-          // In combat - ALWAYS face the enemy
+        // Set target yaw - face movement direction when carrying flag, otherwise face enemy
+        if (bot.carryingFlag) {
+          // When carrying flag, ALWAYS face movement direction (toward own base)
+          bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
+        } else if (enemyTarget && distToEnemy < 50) {
+          // In combat - face the enemy
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
           bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
         } else if (bot.isMoving) {
