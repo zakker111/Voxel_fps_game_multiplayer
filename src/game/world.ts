@@ -6,7 +6,7 @@ export const VOXEL_STONE = 2;
 export const VOXEL_GRASS = 3;
 export const VOXEL_BUILT = 4;
 
-export const WORLD_SIZE = 150;
+export const WORLD_SIZE = 250;
 export const GROUND_LEVEL = 8;
 export const MAX_BUILD_UP = 20;
 export const MAX_DIG_DOWN = 20;

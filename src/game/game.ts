@@ -41,7 +41,7 @@ interface Bot {
   nameTag: THREE.Sprite;
   isCrouching: boolean;
   crouchTimer: number;
-  behaviorState: 'patrol' | 'engage' | 'strafe' | 'crouch' | 'peek' | 'capture' | 'retreat' | 'flank' | 'jumpdodge';
+  behaviorState: 'patrol' | 'engage' | 'strafe' | 'crouch' | 'peek' | 'capture' | 'retreat' | 'flank' | 'jumpdodge' | 'cover';
   behaviorTimer: number;
   strafeDirection: number;
   stuckTimer: number;
@@ -62,6 +62,7 @@ interface Bot {
   aggression: number; // 0-1, how aggressive the bot is
   lastDamageTime: number;
   dodgeTimer: number;
+  coverTimer: number;
 }
 
 interface Weapon {
@@ -120,9 +121,16 @@ export class Game {
 
   hipPosition: THREE.Vector3 = new THREE.Vector3(0.3, -0.25, -0.5);
   adsPosition: THREE.Vector3 = new THREE.Vector3(0, -0.15, -0.35);
-
+  
+  // Pickaxe animation
+  pickaxeAnimationTime: number = 0;
+  isPickaxeAnimating: boolean = false;
+  pickaxeAnimationDuration: number = 0.3;
+  
+  // Death animation
+  deathAnimations: Map<string, { mesh: THREE.Group; timer: number; startPos: THREE.Vector3 }> = new Map();
+  
   gameMode: 'multiplayer' | 'singleplayer' = 'multiplayer';
-
   private boundResize: () => void;
   private boundMouseDown: (e: MouseEvent) => void;
   private boundMouseUp: (e: MouseEvent) => void;
@@ -407,7 +415,14 @@ export class Game {
       if (closestBot.hp <= 0) {
         closestBot.isDead = true;
         closestBot.respawnTimer = 8;
-        closestBot.mesh.visible = false;
+        
+        // Start death animation instead of hiding immediately
+        this.deathAnimations.set(closestBot.mesh.uuid, {
+          mesh: closestBot.mesh,
+          timer: 0,
+          startPos: closestBot.mesh.position.clone()
+        });
+        
         this.blueKills++;
         this.sounds.killSound();
         this.showMessage(`Eliminated ${TEAM_COLORS[closestBot.team].label} bot! ${isHeadshot ? '🎯 HEADSHOT!' : ''}`);
@@ -418,9 +433,13 @@ export class Game {
   }
 
   private usePickaxe(now: number): void {
-    if (now - this.lastActionTime < 0.5) return;
+    if (now - this.lastActionTime < 0.3) return;
     this.lastActionTime = now;
     this.sounds.pickaxeHit();
+
+    // Trigger pickaxe animation
+    this.pickaxeAnimationTime = 0;
+    this.isPickaxeAnimating = true;
 
     const origin = this.player.camera.position.clone();
     const dir = this.player.getAimDirection();
@@ -610,6 +629,7 @@ export class Game {
         aggression: 0.4 + Math.random() * 0.6, // 0.4-1.0 aggression
         lastDamageTime: 0,
         dodgeTimer: 0,
+        coverTimer: 0,
       });
     }
   }
@@ -1011,16 +1031,21 @@ export class Game {
         // COMBAT BEHAVIORS
         else if (enemyTarget && distToEnemy < 15) {
           const roll = Math.random();
-          if (roll < 0.5 * bot.aggression) {
+          if (roll < 0.4 * bot.aggression) {
             // Aggressive strafing
             bot.behaviorState = 'strafe';
             bot.strafeDirection = Math.random() > 0.5 ? 1 : -1;
             bot.behaviorTimer = 1 + Math.random() * 2;
-          } else if (roll < 0.7) {
+          } else if (roll < 0.6) {
             // Flank the enemy
             bot.behaviorState = 'flank';
             bot.behaviorTimer = 2 + Math.random() * 2;
-          } else if (roll < 0.85) {
+          } else if (roll < 0.75) {
+            // Take cover
+            bot.behaviorState = 'cover';
+            bot.coverTimer = 1 + Math.random() * 1.5;
+            bot.behaviorTimer = bot.coverTimer;
+          } else if (roll < 0.9) {
             // Quick peek
             bot.behaviorState = 'peek';
             bot.crouchTimer = 0.3 + Math.random() * 0.5;
@@ -1034,16 +1059,21 @@ export class Game {
         // MEDIUM RANGE
         else if (enemyTarget && distToEnemy < 35) {
           const roll = Math.random();
-          if (roll < 0.4 * bot.aggression) {
+          if (roll < 0.35 * bot.aggression) {
             // Engage aggressively
             bot.behaviorState = 'engage';
             bot.behaviorTimer = 1.5 + Math.random() * 2;
-          } else if (roll < 0.7) {
+          } else if (roll < 0.6) {
             // Strafe and shoot
             bot.behaviorState = 'strafe';
             bot.strafeDirection = Math.random() > 0.5 ? 1 : -1;
             bot.behaviorTimer = 2 + Math.random() * 2;
-          } else if (roll < 0.85) {
+          } else if (roll < 0.75) {
+            // Take cover
+            bot.behaviorState = 'cover';
+            bot.coverTimer = 1.5 + Math.random() * 2;
+            bot.behaviorTimer = bot.coverTimer;
+          } else if (roll < 0.9) {
             // Flank
             bot.behaviorState = 'flank';
             bot.behaviorTimer = 2 + Math.random() * 3;
@@ -1168,6 +1198,25 @@ export class Game {
               bot.jumpCooldown = 1;
             }
           }
+          break;
+          
+        case 'cover':
+          bot.coverTimer -= dt;
+          bot.isCrouching = true;
+          if (bot.coverTimer <= 0) {
+            // Time to peek out and shoot
+            bot.behaviorState = 'peek';
+            bot.crouchTimer = 0.5 + Math.random() * 0.5;
+            bot.isCrouching = false;
+          } else {
+            // Stay in cover, maybe move slightly
+            if (Math.random() < 0.01 && bot.grounded && bot.jumpCooldown <= 0) {
+              // Quick jump to reposition
+              bot.velocity.y = 6;
+              bot.jumpCooldown = 2;
+            }
+          }
+          bot.targetPos.copy(bot.position);
           break;
       }
 
@@ -1416,6 +1465,56 @@ export class Game {
 
     if (this.isMouseDown && (this.equipment === 'rifle' || this.equipment === 'smg')) {
       this.shoot(performance.now() / 1000);
+    }
+    
+    // Continuous pickaxe use
+    if (this.isMouseDown && this.equipment === 'pickaxe') {
+      this.usePickaxe(performance.now() / 1000);
+    }
+    
+    // Update pickaxe animation
+    if (this.isPickaxeAnimating) {
+      this.pickaxeAnimationTime += dt;
+      if (this.pickaxeAnimationTime >= this.pickaxeAnimationDuration) {
+        this.isPickaxeAnimating = false;
+        this.pickaxeAnimationTime = 0;
+      }
+      
+      // Animate pickaxe swing
+      if (this.currentWeaponModel && this.equipment === 'pickaxe') {
+        const swingProgress = this.pickaxeAnimationTime / this.pickaxeAnimationDuration;
+        const swingAngle = Math.sin(swingProgress * Math.PI) * 0.8;
+        this.currentWeaponModel.rotation.x = -swingAngle;
+        this.currentWeaponModel.position.z = this.hipPosition.z - swingAngle * 0.2;
+      }
+    } else if (this.currentWeaponModel && this.equipment === 'pickaxe') {
+      // Reset pickaxe rotation when not animating
+      this.currentWeaponModel.rotation.x *= 0.9;
+      this.currentWeaponModel.position.z += (this.hipPosition.z - this.currentWeaponModel.position.z) * 0.1;
+    }
+    
+    // Update death animations
+    const deathAnimationDuration = 1.5;
+    for (const [uuid, anim] of this.deathAnimations) {
+      anim.timer += dt;
+      const progress = Math.min(anim.timer / deathAnimationDuration, 1);
+      
+      // Sink into ground
+      anim.mesh.position.y = anim.startPos.y - progress * 2;
+      
+      // Rotate and fall over
+      anim.mesh.rotation.x = progress * Math.PI * 0.5;
+      anim.mesh.rotation.z = Math.sin(progress * Math.PI) * 0.3;
+      
+      // Fade out (by scaling down)
+      const scale = 1 - progress * 0.5;
+      anim.mesh.scale.set(scale, scale, scale);
+      
+      // Remove when animation complete
+      if (progress >= 1) {
+        anim.mesh.visible = false;
+        this.deathAnimations.delete(uuid);
+      }
     }
 
     this.updateBots(dt);
