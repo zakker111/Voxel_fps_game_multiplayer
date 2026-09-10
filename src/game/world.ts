@@ -207,28 +207,28 @@ export class VoxelWorld {
     return true;
   }
 
-  damageVoxel(x: number, y: number, z: number, damage: number): { destroyed: boolean; collapsed: number } {
+  damageVoxel(x: number, y: number, z: number, damage: number): { destroyed: boolean; collapsed: number; collapsedVoxels: Array<{ x: number; y: number; z: number; type: number }> } {
     const v = this.getVoxel(x, y, z);
-    if (!v) return { destroyed: false, collapsed: 0 };
+    if (!v) return { destroyed: false, collapsed: 0, collapsedVoxels: [] };
     
     v.durability -= damage;
     
     if (v.durability <= 0) {
       this.setVoxel(x, y, z, VOXEL_AIR);
       // Pass coordinates for localized collapse detection
-      const collapsed = this.collapseDisconnected(x, y, z);
-      return { destroyed: true, collapsed };
+      const collapseResult = this.collapseDisconnected(x, y, z);
+      return { destroyed: true, collapsed: collapseResult.count, collapsedVoxels: collapseResult.voxels };
     }
     
     // Fast color update without rebuild
     this.updateVoxelColor(x, y, z, v.type, v.durability);
-    return { destroyed: false, collapsed: 0 };
+    return { destroyed: false, collapsed: 0, collapsedVoxels: [] };
   }
 
   // Localized collapse check - only checks neighbors of destroyed voxel
-  collapseDisconnected(destroyedX?: number, destroyedY?: number, destroyedZ?: number): number {
+  collapseDisconnected(destroyedX?: number, destroyedY?: number, destroyedZ?: number): { count: number; voxels: Array<{ x: number; y: number; z: number; type: number }> } {
     if (destroyedX === undefined || destroyedY === undefined || destroyedZ === undefined) {
-      return 0;
+      return { count: 0, voxels: [] };
     }
 
     const toCollapse: string[] = [];
@@ -258,16 +258,26 @@ export class VoxelWorld {
       }
     }
 
+    // Collect voxel data before removing them
+    const collapsedVoxels: Array<{ x: number; y: number; z: number; type: number }> = [];
+    
     // Remove all unsupported voxels
     for (const key of toCollapse) {
       const parts = key.split(',');
       const x = parseInt(parts[0]);
       const y = parseInt(parts[1]);
       const z = parseInt(parts[2]);
+      
+      // Get voxel type before removing
+      const voxel = this.getVoxel(x, y, z);
+      if (voxel) {
+        collapsedVoxels.push({ x, y, z, type: voxel.type });
+      }
+      
       this.setVoxel(x, y, z, VOXEL_AIR);
     }
 
-    return toCollapse.length;
+    return { count: toCollapse.length, voxels: collapsedVoxels };
   }
 
   // Check if a voxel has support (path to ground within maxDistance blocks)

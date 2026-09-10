@@ -141,6 +141,15 @@ export class Game {
     maxLife: number;
   }> = [];
   
+  // Collapse animation
+  collapseAnimations: Array<{
+    mesh: THREE.Mesh;
+    velocity: THREE.Vector3;
+    angularVelocity: THREE.Vector3;
+    life: number;
+    maxLife: number;
+  }> = [];
+  
   gameMode: GameMode = 'multiplayer';
   
   // Multiplayer networking
@@ -426,7 +435,8 @@ export class Game {
             this.showMessage('Voxel destroyed!');
             if (result.collapsed > 0) {
               this.sounds.collapse();
-              this.showMessage(`Structure collapsed! (${result.collapsed} voxels)`);
+              // Trigger collapse animation
+              this.createCollapseAnimation(result.collapsedVoxels);
             }
           } else {
             // Fast color update (no rebuild!)
@@ -539,7 +549,7 @@ export class Game {
     const ring = new THREE.Mesh(geometry, material);
     
     // Position at the built voxel
-    ring.position.set(x + 0.5, y + 0.5, z + 0.5);
+    ring.position.set(x + 0.5, y + 0.5, z + 5);
     
     // Rotate to face camera
     ring.lookAt(this.player.camera.position);
@@ -568,6 +578,100 @@ export class Game {
     animate();
   }
 
+  private createCollapseAnimation(voxels: Array<{ x: number; y: number; z: number; type: number }>): void {
+    // Limit the number of animated voxels for performance
+    const maxAnimated = Math.min(voxels.length, 50);
+    const voxelsToAnimate = voxels.slice(0, maxAnimated);
+    
+    // Color mapping for voxel types
+    const colorMap: Record<number, number> = {
+      1: 0x8B4513, // Dirt - brown
+      2: 0x808080, // Stone - gray
+      3: 0x228B22, // Grass - green
+      4: 0xDAA520, // Built - golden
+    };
+    
+    for (const voxel of voxelsToAnimate) {
+      // Create a small cube for the collapsing voxel
+      const geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+      const material = new THREE.MeshLambertMaterial({ 
+        color: colorMap[voxel.type] || 0xffffff,
+        transparent: true,
+        opacity: 1.0
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      
+      // Position at the voxel location
+      mesh.position.set(voxel.x + 0.5, voxel.y + 0.5, voxel.z + 0.5);
+      
+      this.scene.add(mesh);
+      
+      // Random velocity (falling down with some horizontal spread)
+      const velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 2, // X: random horizontal
+        -Math.random() * 3 - 2,     // Y: falling down
+        (Math.random() - 0.5) * 2  // Z: random horizontal
+      );
+      
+      // Random angular velocity for rotation
+      const angularVelocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 5,
+        (Math.random() - 0.5) * 5,
+        (Math.random() - 0.5) * 5
+      );
+      
+      this.collapseAnimations.push({
+        mesh,
+        velocity,
+        angularVelocity,
+        life: 0,
+        maxLife: 1.5 // 1.5 seconds animation
+      });
+    }
+    
+    // Show message if many voxels collapsed
+    if (voxels.length > 0) {
+      this.showMessage(`Structure collapsed! (${voxels.length} blocks)`);
+    }
+  }
+
+  private updateCollapseAnimations(dt: number): void {
+    const gravity = 15; // Gravity acceleration
+    
+    for (let i = this.collapseAnimations.length - 1; i >= 0; i--) {
+      const anim = this.collapseAnimations[i];
+      
+      // Update life
+      anim.life += dt;
+      
+      // Apply gravity to velocity
+      anim.velocity.y -= gravity * dt;
+      
+      // Update position
+      anim.mesh.position.add(anim.velocity.clone().multiplyScalar(dt));
+      
+      // Update rotation
+      anim.mesh.rotation.x += anim.angularVelocity.x * dt;
+      anim.mesh.rotation.y += anim.angularVelocity.y * dt;
+      anim.mesh.rotation.z += anim.angularVelocity.z * dt;
+      
+      // Fade out in the last 0.5 seconds
+      const fadeStart = anim.maxLife - 0.5;
+      if (anim.life > fadeStart) {
+        const fadeProgress = (anim.life - fadeStart) / 0.5;
+        (anim.mesh.material as THREE.MeshLambertMaterial).opacity = 1.0 - fadeProgress;
+      }
+      
+      // Remove if animation complete
+      if (anim.life >= anim.maxLife) {
+        this.scene.remove(anim.mesh);
+        anim.mesh.geometry.dispose();
+        (anim.mesh.material as THREE.Material).dispose();
+        this.collapseAnimations.splice(i, 1);
+      }
+    }
+  }
+
   private usePickaxe(now: number): void {
     if (now - this.lastActionTime < 0.3) return;
     this.lastActionTime = now;
@@ -592,7 +696,8 @@ export class Game {
         this.showMessage(`+1 voxel (Inventory: ${this.inventory})`);
         if (result.collapsed > 0) {
           this.sounds.collapse();
-          this.showMessage(`Structure collapsed! (${result.collapsed} voxels)`);
+          // Trigger collapse animation
+          this.createCollapseAnimation(result.collapsedVoxels);
         }
       } else {
         // Fast color update (no rebuild!)
@@ -619,6 +724,8 @@ export class Game {
     if (hit) {
       let totalCollapsed = 0;
       let anyDestroyed = false;
+      const allCollapsedVoxels: Array<{ x: number; y: number; z: number; type: number }> = [];
+      
       for (let i = 0; i < 2; i++) {
         const vx = hit.voxelPos.x + Math.round(hit.normal.x) * i;
         const vy = hit.voxelPos.y + Math.round(hit.normal.y) * i;
@@ -628,6 +735,7 @@ export class Game {
           if (result.destroyed) {
             anyDestroyed = true;
             totalCollapsed += result.collapsed;
+            allCollapsedVoxels.push(...result.collapsedVoxels);
           }
         }
       }
@@ -636,7 +744,8 @@ export class Game {
         this.sounds.voxelBreak();
         if (totalCollapsed > 0) {
           this.sounds.collapse();
-          this.showMessage(`Structure collapsed! (${totalCollapsed} voxels)`);
+          // Trigger collapse animation
+          this.createCollapseAnimation(allCollapsedVoxels);
         }
       }
     }
@@ -1823,6 +1932,9 @@ export class Game {
 
     // Update bullet tracers
     this.updateBulletTracers(dt);
+    
+    // Update collapse animations
+    this.updateCollapseAnimations(dt);
 
     this.updateBots(dt);
     
