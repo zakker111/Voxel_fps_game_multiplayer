@@ -84,8 +84,8 @@ const RED_SPAWN_Z_MIN = 30;
 const RED_SPAWN_Z_MAX = 60;
 const SPAWN_X_RANGE = 40;
 
-const BLUE_FLAG_POS = { x: 0, z: -55 };
-const RED_FLAG_POS = { x: 0, z: 55 };
+const BLUE_FLAG_POS = { x: 0, z: -80 };
+const RED_FLAG_POS = { x: 0, z: 80 };
 
 export class Game {
   scene: THREE.Scene;
@@ -975,6 +975,9 @@ export class Game {
           bot.position.copy(spawnPos);
           bot.mesh.visible = true;
           bot.mesh.position.copy(bot.position);
+          // Reset rotation and scale from death animation
+          bot.mesh.rotation.set(0, 0, 0);
+          bot.mesh.scale.set(1, 1, 1);
           bot.velocity.set(0, 0, 0);
           bot.isCrouching = false;
           bot.behaviorState = 'patrol';
