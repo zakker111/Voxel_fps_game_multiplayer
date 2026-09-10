@@ -16,9 +16,15 @@ export class ServerGame {
   private world: ServerWorld;
   private connections: Map<string, WebSocket> = new Map();
   private scores = { red: 0, blue: 0 };
+  private captures = { red: 0, blue: 0 };
   private lastShootTime: Map<string, number> = new Map();
   private lastToolTime: Map<string, number> = new Map();
   private inventories: Map<string, number> = new Map();
+  
+  // Flag positions (must match client)
+  private readonly BLUE_FLAG_POS = { x: 0, z: -80 };
+  private readonly RED_FLAG_POS = { x: 0, z: 80 };
+  private readonly CAPTURE_DISTANCE = 3;
 
   constructor() {
     this.world = new ServerWorld();
@@ -348,6 +354,51 @@ export class ServerGame {
     // Update all players
     for (const player of this.players.values()) {
       player.update(dt, this.world);
+    }
+    
+    // Check for flag captures
+    this.checkFlagCaptures();
+  }
+  
+  private checkFlagCaptures(): void {
+    for (const [playerId, player] of this.players) {
+      if (player.isDead) continue;
+      
+      // Determine which flag this player should capture (enemy flag)
+      const enemyFlag = player.team === 'blue' ? this.RED_FLAG_POS : this.BLUE_FLAG_POS;
+      
+      // Calculate distance to enemy flag
+      const dx = player.position.x - enemyFlag.x;
+      const dz = player.position.z - enemyFlag.z;
+      const distance = Math.sqrt(dx * dx + dz * dz);
+      
+      // Check if player is within capture distance
+      if (distance < this.CAPTURE_DISTANCE) {
+        // Record capture
+        if (player.team === 'blue') {
+          this.captures.blue++;
+        } else {
+          this.captures.red++;
+        }
+        
+        // Broadcast capture event
+        this.broadcast({
+          type: 'flagCaptured',
+          team: player.team,
+          playerId: playerId,
+          captures: this.captures,
+        });
+        
+        // Respawn player at their base
+        const spawnPos = this.getSpawnPosition(player.team);
+        player.respawn(spawnPos);
+        
+        this.broadcast({
+          type: 'playerRespawned',
+          playerId: playerId,
+          position: spawnPos,
+        });
+      }
     }
   }
 

@@ -2683,6 +2683,17 @@ export class Game {
       this.inventory = msg.inventory;
     });
 
+    this.networkClient.onMessage('flagCaptured', (msg) => {
+      // Update captures from server
+      this.blueCaptures = msg.captures.blue;
+      this.redCaptures = msg.captures.red;
+      
+      // Show capture message
+      const teamName = msg.team === 'blue' ? 'BLUE' : 'RED';
+      this.showMessage(`🏁 ${teamName} TEAM CAPTURED THE FLAG!`);
+      this.sounds.capture();
+    });
+
     // Connect to server
     this.networkClient.connect().catch((error) => {
       console.error('Failed to connect to server:', error);

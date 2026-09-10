@@ -76,7 +76,8 @@ export type ServerMessage =
   | { type: 'playerDied'; playerId: string; killerId?: string }
   | { type: 'playerRespawned'; playerId: string; position: Position }
   | { type: 'hitConfirmed'; targetId: string; damage: number; isHeadshot: boolean }
-  | { type: 'inventoryUpdated'; inventory: number };
+  | { type: 'inventoryUpdated'; inventory: number }
+  | { type: 'flagCaptured'; team: 'red' | 'blue'; playerId: string; captures: { red: number; blue: number } };
 
 export interface GameState {
   players: Map<string, PlayerState>;

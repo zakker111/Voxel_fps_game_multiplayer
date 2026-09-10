@@ -120,6 +120,14 @@ export class SoundManager {
     setTimeout(() => this.playTone(800, 0.1, 0.2, 'sine'), 200);
   }
 
+  capture() {
+    // Triumphant ascending sequence for flag capture
+    this.playTone(523, 0.15, 0.3, 'sine'); // C5
+    setTimeout(() => this.playTone(659, 0.15, 0.3, 'sine'), 150); // E5
+    setTimeout(() => this.playTone(784, 0.15, 0.3, 'sine'), 300); // G5
+    setTimeout(() => this.playTone(1047, 0.3, 0.4, 'sine'), 450); // C6
+  }
+
   weaponSwitch() {
     this.playTone(500, 0.05, 0.15, 'sine');
   }
