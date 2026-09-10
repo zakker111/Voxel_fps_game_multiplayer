@@ -2,9 +2,12 @@ import * as THREE from 'three';
 import { VoxelWorld, VOXEL_BUILT, VOXEL_SIZE } from './world';
 import { Player } from './player';
 import { SoundManager } from './sounds';
+import { NetworkClient } from './networkClient';
+import { PlayerState, PlayerInput, Position } from '../shared/types';
 
 export type EquipmentType = 'rifle' | 'smg' | 'spade' | 'pickaxe';
 type Team = 'red' | 'blue';
+type GameMode = 'multiplayer' | 'singleplayer' | 'online';
 
 export interface GameState {
   hp: number;
@@ -130,7 +133,15 @@ export class Game {
   // Death animation
   deathAnimations: Map<string, { mesh: THREE.Group; timer: number; startPos: THREE.Vector3 }> = new Map();
   
-  gameMode: 'multiplayer' | 'singleplayer' = 'multiplayer';
+  gameMode: GameMode = 'multiplayer';
+  
+  // Multiplayer networking
+  networkClient: NetworkClient | null = null;
+  remotePlayers: Map<string, { mesh: THREE.Group; state: PlayerState; targetPosition: THREE.Vector3; targetRotation: THREE.Euler }> = new Map();
+  localPlayerId: string | null = null;
+  lastInputSendTime: number = 0;
+  inputSendRate: number = 50; // ms between input sends
+  
   private boundResize: () => void;
   private boundMouseDown: (e: MouseEvent) => void;
   private boundMouseUp: (e: MouseEvent) => void;
@@ -144,7 +155,7 @@ export class Game {
     smg: { fireRate: 0.1, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.04, name: 'SMG' },
   };
 
-  constructor(canvas: HTMLCanvasElement, mode: 'multiplayer' | 'singleplayer' = 'multiplayer') {
+  constructor(canvas: HTMLCanvasElement, mode: GameMode = 'multiplayer') {
     console.log('Game constructor called, mode:', mode);
     this.canvas = canvas;
     this.clock = new THREE.Clock();
@@ -210,10 +221,15 @@ export class Game {
     this.createWeaponModels();
     this.switchWeaponModel('rifle');
 
-    // Only spawn bots in multiplayer mode
+    // Only spawn bots in multiplayer mode (with bots)
     if (this.gameMode === 'multiplayer') {
       this.spawnTeamBots('blue', 6);
       this.spawnTeamBots('red', 7);
+    }
+
+    // Initialize network for online multiplayer
+    if (this.gameMode === 'online') {
+      this.initializeNetwork();
     }
 
     this.boundResize = this.onResize.bind(this);
@@ -1671,6 +1687,13 @@ export class Game {
     }
 
     this.updateBots(dt);
+    
+    // Update network for online multiplayer
+    if (this.gameMode === 'online') {
+      this.sendPlayerInput();
+      this.updateRemotePlayers(dt);
+    }
+    
     this.updateHighlight();
 
     if (this.muzzleTimer > 0) {
@@ -1713,7 +1736,181 @@ export class Game {
     }
   }
 
+  // Network methods for online multiplayer
+  private initializeNetwork(): void {
+    console.log('Initializing network for online multiplayer');
+    this.networkClient = new NetworkClient('ws://localhost:3000');
+    
+    this.networkClient.onConnect(() => {
+      console.log('Connected to game server');
+      this.showMessage('Connected to server!');
+      // Join as blue team by default
+      this.networkClient!.sendJoin('blue');
+    });
+
+    this.networkClient.onDisconnect(() => {
+      console.log('Disconnected from game server');
+      this.showMessage('Disconnected from server');
+    });
+
+    // Handle server messages
+    this.networkClient.onMessage('playerJoined', (msg) => {
+      console.log('Player joined:', msg.playerId);
+      if (msg.playerId !== this.localPlayerId) {
+        this.createRemotePlayer(msg.playerId, msg.state);
+      } else {
+        console.log('This is us!', msg.state);
+      }
+    });
+
+    this.networkClient.onMessage('playerUpdated', (msg) => {
+      this.updateRemotePlayer(msg.playerId, msg.state);
+    });
+
+    this.networkClient.onMessage('playerLeft', (msg) => {
+      console.log('Player left:', msg.playerId);
+      this.removeRemotePlayer(msg.playerId);
+    });
+
+    this.networkClient.onMessage('voxelChanged', (msg) => {
+      this.handleVoxelChange(msg.change);
+    });
+
+    this.networkClient.onMessage('hitConfirmed', (msg) => {
+      this.hitMarkerTimer = 0.2;
+      this.sounds.hitMarker();
+      this.showMessage(`Hit! ${msg.damage} damage${msg.isHeadshot ? ' (HEADSHOT!)' : ''}`);
+    });
+
+    this.networkClient.onMessage('playerDamaged', (msg) => {
+      this.player.takeDamage(msg.damage);
+    });
+
+    this.networkClient.onMessage('playerDied', (msg) => {
+      if (msg.playerId === this.localPlayerId) {
+        this.player.die();
+        this.sounds.death();
+      }
+    });
+
+    this.networkClient.onMessage('playerRespawned', (msg) => {
+      if (msg.playerId === this.localPlayerId) {
+        this.player.respawn();
+        this.sounds.respawn();
+      }
+    });
+
+    this.networkClient.onMessage('inventoryUpdated', (msg) => {
+      this.inventory = msg.inventory;
+    });
+
+    // Connect to server
+    this.networkClient.connect().catch((error) => {
+      console.error('Failed to connect to server:', error);
+      this.showMessage('Failed to connect to server. Make sure the server is running!');
+    });
+  }
+
+  private createRemotePlayer(playerId: string, state: PlayerState): void {
+    console.log('Creating remote player:', playerId);
+    const mesh = this.createBotMesh(state.team).group;
+    mesh.position.set(state.position.x, state.position.y, state.position.z);
+    mesh.rotation.set(0, state.rotation.yaw, 0);
+    this.scene.add(mesh);
+
+    this.remotePlayers.set(playerId, {
+      mesh,
+      state,
+      targetPosition: new THREE.Vector3(state.position.x, state.position.y, state.position.z),
+      targetRotation: new THREE.Euler(0, state.rotation.yaw, 0),
+    });
+  }
+
+  private updateRemotePlayer(playerId: string, state: PlayerState): void {
+    const remotePlayer = this.remotePlayers.get(playerId);
+    if (!remotePlayer) {
+      this.createRemotePlayer(playerId, state);
+      return;
+    }
+
+    remotePlayer.state = state;
+    remotePlayer.targetPosition.set(state.position.x, state.position.y, state.position.z);
+    remotePlayer.targetRotation.set(0, state.rotation.yaw, 0);
+  }
+
+  private removeRemotePlayer(playerId: string): void {
+    const remotePlayer = this.remotePlayers.get(playerId);
+    if (remotePlayer) {
+      this.scene.remove(remotePlayer.mesh);
+      this.remotePlayers.delete(playerId);
+    }
+  }
+
+  private updateRemotePlayers(dt: number): void {
+    for (const [playerId, remotePlayer] of this.remotePlayers) {
+      // Smooth interpolation
+      remotePlayer.mesh.position.lerp(remotePlayer.targetPosition, Math.min(dt * 10, 1));
+      
+      // Smooth rotation
+      const currentYaw = remotePlayer.mesh.rotation.y;
+      const targetYaw = remotePlayer.targetRotation.y;
+      const yawDiff = targetYaw - currentYaw;
+      const normalizedDiff = Math.atan2(Math.sin(yawDiff), Math.cos(yawDiff));
+      remotePlayer.mesh.rotation.y += normalizedDiff * Math.min(dt * 10, 1);
+
+      // Update crouching visual
+      const targetScale = remotePlayer.state.isCrouching ? 0.7 : 1.0;
+      remotePlayer.mesh.scale.y += (targetScale - remotePlayer.mesh.scale.y) * Math.min(dt * 10, 1);
+    }
+  }
+
+  private sendPlayerInput(): void {
+    if (!this.networkClient || this.gameMode !== 'online') return;
+
+    const now = performance.now();
+    if (now - this.lastInputSendTime < this.inputSendRate) return;
+    this.lastInputSendTime = now;
+
+    const input: PlayerInput = {
+      moveX: 0,
+      moveZ: 0,
+      jump: false,
+      crouch: this.player.isCrouching,
+      sprint: this.player.isSprinting,
+      yaw: this.player.yaw,
+      pitch: this.player.pitch,
+    };
+
+    // Calculate movement direction
+    const forward = this.player.getForward();
+    const right = this.player.getRight();
+    
+    // This is simplified - in a real implementation, you'd track which keys are pressed
+    // For now, we'll send the current velocity as input
+    if (this.player.velocity.length() > 0.1) {
+      input.moveX = this.player.velocity.dot(right) / this.player.speed;
+      input.moveZ = this.player.velocity.dot(forward) / this.player.speed;
+    }
+
+    this.networkClient.sendPlayerInput(input);
+  }
+
+  private handleVoxelChange(change: any): void {
+    // setVoxel automatically marks chunks as dirty, which will be rebuilt in the next update()
+    this.world.setVoxel(change.x, change.y, change.z, change.type, change.durability);
+    // Also update the color immediately for visual feedback
+    if (change.type !== 0) {
+      this.world.updateVoxelColor(change.x, change.y, change.z, change.type, change.durability);
+    }
+  }
+
   destroy(): void {
+    // Disconnect network client if in online mode
+    if (this.networkClient) {
+      this.networkClient.disconnect();
+      this.networkClient = null;
+    }
+    
     window.removeEventListener('resize', this.boundResize);
     this.canvas.removeEventListener('mousedown', this.boundMouseDown);
     this.canvas.removeEventListener('mouseup', this.boundMouseUp);

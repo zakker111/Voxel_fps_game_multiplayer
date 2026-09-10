@@ -11,7 +11,7 @@ function App() {
     blueKills: 0, redKills: 0, isAiming: false,
   });
   const [started, setStarted] = useState(false);
-  const [gameMode, setGameMode] = useState<'multiplayer' | 'singleplayer' | null>(null);
+  const [gameMode, setGameMode] = useState<'multiplayer' | 'singleplayer' | 'online' | null>(null);
 
   useEffect(() => {
     if (!canvasRef.current || gameRef.current || !gameMode) return;
@@ -42,7 +42,7 @@ function App() {
     };
   }, [gameMode]);
 
-  const handleStart = (mode: 'multiplayer' | 'singleplayer') => {
+  const handleStart = (mode: 'multiplayer' | 'singleplayer' | 'online') => {
     setGameMode(mode);
   };
 
@@ -76,7 +76,10 @@ function App() {
             <p className="text-sm text-gray-400 mb-6">You are <span className="text-blue-400 font-bold">BLUE</span> team. Push to the <span className="text-red-400 font-bold">RED</span> flag!</p>
             <div className="flex gap-4 justify-center mb-6">
               <button onClick={() => handleStart('multiplayer')} className="px-8 py-4 bg-[#00ff88] text-black font-bold text-xl rounded-xl hover:bg-[#00cc66] transition-colors">
-                🎮 Multiplayer
+                🤖 With Bots
+              </button>
+              <button onClick={() => handleStart('online')} className="px-8 py-4 bg-purple-600 text-white font-bold text-xl rounded-xl hover:bg-purple-700 transition-colors">
+                🌐 Online Multiplayer
               </button>
               <button onClick={() => handleStart('singleplayer')} className="px-8 py-4 bg-blue-600 text-white font-bold text-xl rounded-xl hover:bg-blue-700 transition-colors">
                 🧪 Singleplayer
@@ -119,7 +122,7 @@ function App() {
       {started && (
         <>
           {/* Scoreboard - only in multiplayer */}
-          {gameMode === 'multiplayer' && (
+          {(gameMode === 'multiplayer' || gameMode === 'online') && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
               <div className="flex items-center bg-gray-900/90 rounded-xl overflow-hidden border-2 border-gray-700">
                 <div className="px-5 py-2 bg-blue-900/40 flex items-center gap-2">
