@@ -23,6 +23,7 @@ export interface PlayerState {
   isAiming: boolean;
   isCrouching: boolean;
   isSprinting: boolean;
+  isShooting?: boolean;
 }
 
 export interface VoxelChange {

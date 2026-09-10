@@ -137,7 +137,7 @@ export class Game {
   
   // Multiplayer networking
   networkClient: NetworkClient | null = null;
-  remotePlayers: Map<string, { mesh: THREE.Group; state: PlayerState; targetPosition: THREE.Vector3; targetRotation: THREE.Euler }> = new Map();
+  remotePlayers: Map<string, { mesh: THREE.Group; state: PlayerState; targetPosition: THREE.Vector3; targetRotation: THREE.Euler; lastShootingTime: number }> = new Map();
   localPlayerId: string | null = null;
   lastInputSendTime: number = 0;
   inputSendRate: number = 50; // ms between input sends
@@ -151,7 +151,7 @@ export class Game {
   private boundMouseMove: (e: MouseEvent) => void;
 
   weapons: Record<string, Weapon> = {
-    rifle: { fireRate: 0.4, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.001, name: 'Rifle' },
+    rifle: { fireRate: 0.4, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.0005, name: 'Rifle' },
     smg: { fireRate: 0.1, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.04, name: 'SMG' },
   };
 
@@ -1632,12 +1632,12 @@ export class Game {
     this.player.camera.fov += (targetFov - this.player.camera.fov) * Math.min(dt * 10, 1);
     this.player.camera.updateProjectionMatrix();
 
-    if (this.isMouseDown && (this.equipment === 'rifle' || this.equipment === 'smg')) {
+    if (this.isMouseDown && !this.player.isDead && (this.equipment === 'rifle' || this.equipment === 'smg')) {
       this.shoot(performance.now() / 1000);
     }
     
     // Continuous pickaxe use
-    if (this.isMouseDown && this.equipment === 'pickaxe') {
+    if (this.isMouseDown && !this.player.isDead && this.equipment === 'pickaxe') {
       this.usePickaxe(performance.now() / 1000);
     }
     
@@ -1795,7 +1795,7 @@ export class Game {
 
     this.networkClient.onMessage('playerRespawned', (msg) => {
       if (msg.playerId === this.localPlayerId) {
-        this.player.respawn();
+        this.player.respawn(this.playerTeam);
         this.sounds.respawn();
       }
     });
@@ -1823,6 +1823,7 @@ export class Game {
       state,
       targetPosition: new THREE.Vector3(state.position.x, state.position.y, state.position.z),
       targetRotation: new THREE.Euler(0, state.rotation.yaw, 0),
+      lastShootingTime: 0,
     });
   }
 
@@ -1861,6 +1862,28 @@ export class Game {
       // Update crouching visual
       const targetScale = remotePlayer.state.isCrouching ? 0.7 : 1.0;
       remotePlayer.mesh.scale.y += (targetScale - remotePlayer.mesh.scale.y) * Math.min(dt * 10, 1);
+
+      // Play shooting sound when remote player shoots
+      if (remotePlayer.state.isShooting) {
+        const now = performance.now();
+        if (now - remotePlayer.lastShootingTime > 100) { // Prevent sound spam
+          remotePlayer.lastShootingTime = now;
+          
+          // Calculate distance for volume
+          const distance = remotePlayer.mesh.position.distanceTo(this.player.position);
+          const maxDistance = 100;
+          if (distance < maxDistance) {
+            const volume = Math.max(0, 1 - distance / maxDistance);
+            
+            // Play appropriate weapon sound based on equipment
+            if (remotePlayer.state.equipment === 'rifle') {
+              this.sounds.playSoundAtVolume('rifle', volume);
+            } else if (remotePlayer.state.equipment === 'smg') {
+              this.sounds.playSoundAtVolume('smg', volume);
+            }
+          }
+        }
+      }
     }
   }
 

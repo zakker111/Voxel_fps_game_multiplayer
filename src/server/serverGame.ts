@@ -118,6 +118,12 @@ export class ServerGame {
     if (now - lastTime < weapon.fireRate) return;
     
     this.lastShootTime.set(playerId, now);
+    
+    // Set shooting state for sound effects
+    player.isShooting = true;
+    setTimeout(() => {
+      player.isShooting = false;
+    }, 100); // Reset after 100ms
 
     // Raycast to find hit
     const hit = this.world.raycast(origin, direction, 100);

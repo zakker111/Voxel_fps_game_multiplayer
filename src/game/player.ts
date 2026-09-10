@@ -24,6 +24,7 @@ export class Player {
   sensitivity: number = 0.002;
   respawnTimer: number = 0;
   targetInfo: string = '';
+  team: 'red' | 'blue' = 'blue';
 
   // Smooth gameplay features
   headBobTime: number = 0;
@@ -116,16 +117,25 @@ export class Player {
     this.respawnTimer = 6;
   }
 
-  respawn(): void {
+  respawn(team: 'red' | 'blue' = 'blue'): void {
     this.isDead = false;
     this.hp = this.maxHp;
-    const spawnX = (Math.random() - 0.5) * 20;
-    const spawnZ = (Math.random() - 0.5) * 20;
+    
+    // Spawn in team spawn zone
+    let spawnZ: number;
+    if (team === 'blue') {
+      spawnZ = -100 + Math.random() * 15; // BLUE_SPAWN_Z_MIN to BLUE_SPAWN_Z_MAX
+    } else {
+      spawnZ = 85 + Math.random() * 15; // RED_SPAWN_Z_MIN to RED_SPAWN_Z_MAX
+    }
+    
+    const spawnX = (Math.random() - 0.5) * 80; // SPAWN_X_RANGE
     const groundY = this.world.getGroundHeight(spawnX, spawnZ);
     this.position.set(spawnX, groundY, spawnZ);
     this.velocity.set(0, 0, 0);
-    // Player always faces toward enemy team (positive Z direction)
-    this.yaw = Math.PI;
+    
+    // Face toward enemy team
+    this.yaw = team === 'blue' ? Math.PI : 0;
     this.pitch = 0;
   }
 
@@ -240,7 +250,7 @@ export class Player {
     if (this.isDead) {
       this.respawnTimer -= dt;
       if (this.respawnTimer <= 0) {
-        this.respawn();
+        this.respawn(this.team);
       }
       this.updateCamera();
       return;

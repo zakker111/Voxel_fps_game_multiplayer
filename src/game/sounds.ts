@@ -123,4 +123,14 @@ export class SoundManager {
   weaponSwitch() {
     this.playTone(500, 0.05, 0.15, 'sine');
   }
+
+  playSoundAtVolume(soundType: 'rifle' | 'smg', volume: number) {
+    if (soundType === 'rifle') {
+      this.playNoise(0.1, 0.4 * volume);
+      this.playTone(150, 0.05, 0.3 * volume, 'square');
+    } else if (soundType === 'smg') {
+      this.playNoise(0.08, 0.3 * volume);
+      this.playTone(200, 0.03, 0.2 * volume, 'square');
+    }
+  }
 }

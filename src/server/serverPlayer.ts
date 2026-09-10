@@ -27,6 +27,7 @@ export class ServerPlayer {
   isCrouching: boolean = false;
   isSprinting: boolean = false;
   isGrounded: boolean = false;
+  isShooting: boolean = false;
 
   private input: PlayerInput = {
     moveX: 0,
@@ -181,6 +182,7 @@ export class ServerPlayer {
       isAiming: this.isAiming,
       isCrouching: this.isCrouching,
       isSprinting: this.isSprinting,
+      isShooting: this.isShooting,
     };
   }
 }
