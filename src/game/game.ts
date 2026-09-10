@@ -71,6 +71,8 @@ interface Bot {
   coverTimer: number;
   weapon: 'rifle' | 'smg'; // Bot's equipped weapon
   weaponMesh: THREE.Group | null; // Visual weapon model
+  isAiming: boolean; // Is bot aiming down sights
+  aimTransition: number; // 0-1 for smooth aiming transition
 }
 
 interface Weapon {
@@ -1003,6 +1005,8 @@ export class Game {
         coverTimer: 0,
         weapon: botWeapon,
         weaponMesh: weaponMesh,
+        isAiming: false,
+        aimTransition: 0,
       });
     }
   }
@@ -1533,79 +1537,87 @@ export class Game {
       bot.behaviorTimer -= dt;
       bot.moveTimer -= dt;
 
-      // SMART DECISION MAKING
+      // SMART DECISION MAKING - MORE TACTICAL
       if (bot.behaviorTimer <= 0) {
-        bot.behaviorTimer = 1.5 + Math.random() * 2;
+        bot.behaviorTimer = 2 + Math.random() * 3; // Longer decision cycles
 
         // RETREAT when low HP
-        if (hpPercent < 0.3 && enemyTarget && distToEnemy < 20) {
+        if (hpPercent < 0.3 && enemyTarget && distToEnemy < 25) {
           bot.behaviorState = 'retreat';
-          bot.behaviorTimer = 2 + Math.random() * 2;
+          bot.behaviorTimer = 3 + Math.random() * 2;
         }
         // JUMP DODGE when being shot at
         else if (bot.dodgeTimer > 0 && bot.grounded && bot.jumpCooldown <= 0) {
           bot.behaviorState = 'jumpdodge';
           bot.behaviorTimer = 0.5;
         }
-        // COMBAT BEHAVIORS
-        else if (enemyTarget && distToEnemy < 15) {
+        // COMBAT BEHAVIORS - MORE DEFENSIVE
+        else if (enemyTarget && distToEnemy < 20) {
           const roll = Math.random();
-          if (roll < 0.4 * bot.aggression) {
-            // Aggressive strafing
-            bot.behaviorState = 'strafe';
-            bot.strafeDirection = Math.random() > 0.5 ? 1 : -1;
-            bot.behaviorTimer = 1 + Math.random() * 2;
-          } else if (roll < 0.6) {
-            // Flank the enemy
-            bot.behaviorState = 'flank';
-            bot.behaviorTimer = 2 + Math.random() * 2;
-          } else if (roll < 0.75) {
-            // Take cover
+          if (roll < 0.3) {
+            // Take cover (INCREASED from 15%)
             bot.behaviorState = 'cover';
-            bot.coverTimer = 1 + Math.random() * 1.5;
+            bot.coverTimer = 2 + Math.random() * 2; // Longer cover time
             bot.behaviorTimer = bot.coverTimer;
-          } else if (roll < 0.9) {
-            // Quick peek
+          } else if (roll < 0.5) {
+            // Peek and shoot
             bot.behaviorState = 'peek';
-            bot.crouchTimer = 0.3 + Math.random() * 0.5;
-            bot.behaviorTimer = 0.5 + Math.random() * 0.5;
-          } else {
-            // Jump and strafe
-            bot.behaviorState = 'jumpdodge';
-            bot.behaviorTimer = 0.8;
-          }
-        }
-        // MEDIUM RANGE
-        else if (enemyTarget && distToEnemy < 35) {
-          const roll = Math.random();
-          if (roll < 0.35 * bot.aggression) {
-            // Engage aggressively
-            bot.behaviorState = 'engage';
-            bot.behaviorTimer = 1.5 + Math.random() * 2;
-          } else if (roll < 0.6) {
-            // Strafe and shoot
+            bot.crouchTimer = 0.5 + Math.random() * 0.8;
+            bot.behaviorTimer = 0.8 + Math.random() * 0.5;
+          } else if (roll < 0.65 * bot.aggression) {
+            // Strafe (only if aggressive)
             bot.behaviorState = 'strafe';
             bot.strafeDirection = Math.random() > 0.5 ? 1 : -1;
-            bot.behaviorTimer = 2 + Math.random() * 2;
+            bot.behaviorTimer = 1.5 + Math.random() * 2;
           } else if (roll < 0.75) {
-            // Take cover
-            bot.behaviorState = 'cover';
-            bot.coverTimer = 1.5 + Math.random() * 2;
-            bot.behaviorTimer = bot.coverTimer;
-          } else if (roll < 0.9) {
+            // Hold position and aim
+            bot.behaviorState = 'crouch';
+            bot.crouchTimer = 1.5 + Math.random() * 2;
+            bot.behaviorTimer = bot.crouchTimer;
+          } else {
             // Flank
             bot.behaviorState = 'flank';
-            bot.behaviorTimer = 2 + Math.random() * 3;
+            bot.behaviorTimer = 2 + Math.random() * 2;
+          }
+        }
+        // MEDIUM RANGE - MORE TACTICAL
+        else if (enemyTarget && distToEnemy < 40) {
+          const roll = Math.random();
+          if (roll < 0.35) {
+            // Take cover (INCREASED)
+            bot.behaviorState = 'cover';
+            bot.coverTimer = 2.5 + Math.random() * 2.5; // Much longer cover
+            bot.behaviorTimer = bot.coverTimer;
+          } else if (roll < 0.5) {
+            // Hold position and aim
+            bot.behaviorState = 'crouch';
+            bot.crouchTimer = 2 + Math.random() * 2.5;
+            bot.behaviorTimer = bot.crouchTimer;
+          } else if (roll < 0.65 * bot.aggression) {
+            // Strafe (only if aggressive)
+            bot.behaviorState = 'strafe';
+            bot.strafeDirection = Math.random() > 0.5 ? 1 : -1;
+            bot.behaviorTimer = 2 + Math.random() * 2;
+          } else if (roll < 0.8) {
+            // Peek
+            bot.behaviorState = 'peek';
+            bot.crouchTimer = 0.8 + Math.random() * 1;
+            bot.behaviorTimer = 1 + Math.random() * 0.8;
           } else {
-            // Capture objective
-            bot.behaviorState = 'capture';
-            bot.behaviorTimer = 3 + Math.random() * 2;
+            // Flank or capture
+            if (Math.random() > 0.5) {
+              bot.behaviorState = 'flank';
+              bot.behaviorTimer = 3 + Math.random() * 3;
+            } else {
+              bot.behaviorState = 'capture';
+              bot.behaviorTimer = 4 + Math.random() * 3;
+            }
           }
         }
         // NO ENEMY - CAPTURE OBJECTIVE
         else {
           bot.behaviorState = 'capture';
-          bot.behaviorTimer = 3 + Math.random() * 3;
+          bot.behaviorTimer = 4 + Math.random() * 4;
         }
       }
 
@@ -1752,6 +1764,21 @@ export class Game {
             }
           }
           break;
+
+        case 'crouch':
+          bot.isCrouching = true;
+          bot.crouchTimer -= dt;
+          if (bot.crouchTimer <= 0) {
+            bot.behaviorState = 'capture';
+            bot.isCrouching = false;
+          }
+          // Stay in place and face enemy
+          bot.targetPos.copy(bot.position);
+          if (enemyTarget) {
+            const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+            bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
+          }
+          break;
       }
 
       // MOVEMENT
@@ -1770,25 +1797,19 @@ export class Game {
         
         if (this.botCanMoveTo(newX, bot.position.z, bot.position.y)) {
           bot.position.x = newX;
+        } else if (this.botCanMoveTo(bot.position.x, newZ, bot.position.y)) {
+          bot.position.z = newZ;
         } else if (bot.grounded && bot.jumpCooldown <= 0) {
           // Jump over obstacle
           bot.velocity.y = 8;
           bot.jumpCooldown = 1.5;
         }
-        
-        if (this.botCanMoveTo(bot.position.x, newZ, bot.position.y)) {
-          bot.position.z = newZ;
-        }
 
-        // Set target yaw based on situation
-        if (enemyTarget && distToEnemy < 40) {
-          const toEnemy = enemyTarget.pos.clone().sub(bot.position);
-          bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
-        } else {
-          bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
-        }
+        // Set target yaw - ALWAYS face movement direction when moving
+        bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
       } else {
         bot.isMoving = false;
+        // When not moving, face enemy if in combat range
         if (enemyTarget && distToEnemy < 40) {
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
           bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
@@ -1820,6 +1841,15 @@ export class Game {
 
       // SHOOTING - MUCH BETTER ACCURACY
       bot.shootTimer -= dt;
+      
+      // Determine if bot should be aiming
+      const shouldAim = enemyTarget !== null && distToEnemy < 35 && !bot.isMoving && bot.shootTimer <= 0.5;
+      bot.isAiming = shouldAim;
+      
+      // Smooth aiming transition
+      const aimTarget = shouldAim ? 1 : 0;
+      bot.aimTransition += (aimTarget - bot.aimTransition) * Math.min(dt * 8, 1);
+      
       if (bot.shootTimer <= 0 && enemyTarget) {
         const dist = bot.position.distanceTo(enemyTarget.pos);
         if (dist < 50) {
@@ -1846,6 +1876,9 @@ export class Game {
           
           // Crouching bonus
           if (bot.isCrouching) accuracy *= 1.4;
+          
+          // Aiming bonus (ADS)
+          if (bot.isAiming) accuracy *= 1.5;
           
           // Distance modifiers
           if (dist < 15) accuracy *= 1.3; // Close range bonus
@@ -1904,6 +1937,18 @@ export class Game {
       const normalizedDiff = Math.atan2(Math.sin(yawDiff), Math.cos(yawDiff));
       bot.currentYaw += normalizedDiff * Math.min(dt * 10, 1); // Faster rotation
       bot.mesh.rotation.y = bot.currentYaw;
+      
+      // Weapon aiming animation
+      if (bot.weaponMesh) {
+        const aimOffset = bot.aimTransition * 0.15; // Move weapon forward when aiming
+        const hipPosition = new THREE.Vector3(0.3, 1.0, -0.2);
+        const aimPosition = new THREE.Vector3(0.1, 1.1, -0.35);
+        
+        bot.weaponMesh.position.lerpVectors(hipPosition, aimPosition, bot.aimTransition);
+        
+        // Slight tilt when aiming
+        bot.weaponMesh.rotation.x = bot.aimTransition * 0.1;
+      }
       
       // Walking animation
       if (bot.isMoving && bot.grounded) {
@@ -2305,6 +2350,20 @@ export class Game {
       // Update crouching visual
       const targetScale = remotePlayer.state.isCrouching ? 0.7 : 1.0;
       remotePlayer.mesh.scale.y += (targetScale - remotePlayer.mesh.scale.y) * Math.min(dt * 10, 1);
+
+      // Update aiming visual - find weapon mesh in the remote player mesh
+      const aimTransition = remotePlayer.state.aimTransition || (remotePlayer.state.isAiming ? 1 : 0);
+      const weaponMesh = remotePlayer.mesh.children.find(child => 
+        child instanceof THREE.Group && child.children.length > 0
+      ) as THREE.Group | undefined;
+      
+      if (weaponMesh) {
+        // Animate weapon position based on aim transition
+        const hipPosition = new THREE.Vector3(0.3, 1.0, -0.2);
+        const aimPosition = new THREE.Vector3(0.1, 1.1, -0.35);
+        weaponMesh.position.lerpVectors(hipPosition, aimPosition, aimTransition);
+        weaponMesh.rotation.x = aimTransition * 0.1;
+      }
 
       // Play shooting sound when remote player shoots
       if (remotePlayer.state.isShooting) {

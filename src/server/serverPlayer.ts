@@ -253,6 +253,7 @@ export class ServerPlayer {
       currentAmmo: this.currentAmmo,
       magazineSize: this.magazineSize,
       isReloading: this.isReloading,
+      aimTransition: this.isAiming ? 1 : 0, // Sync aiming state
     };
   }
 }

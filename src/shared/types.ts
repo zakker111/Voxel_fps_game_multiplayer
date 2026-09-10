@@ -27,6 +27,7 @@ export interface PlayerState {
   currentAmmo?: number;
   magazineSize?: number;
   isReloading?: boolean;
+  aimTransition?: number; // 0-1 for smooth aiming animation
 }
 
 export interface VoxelChange {
