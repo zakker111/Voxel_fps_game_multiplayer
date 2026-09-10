@@ -112,7 +112,8 @@ export class Player {
     const groundY = this.world.getGroundHeight(spawnX, spawnZ);
     this.position.set(spawnX, groundY, spawnZ);
     this.velocity.set(0, 0, 0);
-    this.yaw = 0;
+    // Player always faces toward enemy team (positive Z direction)
+    this.yaw = Math.PI;
     this.pitch = 0;
   }
 
@@ -322,7 +323,7 @@ export class Player {
     this.updateCamera();
   }
 
-  private updateCamera(): void {
+  updateCamera(): void {
     this.camera.position.copy(this.position);
     this.camera.position.y += this.currentHeight * 0.85;
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');

@@ -184,6 +184,9 @@ export class Game {
     this.player = new Player(this.world);
     const blueSpawn = this.getSafeSpawnPos('blue');
     this.player.position.copy(blueSpawn);
+    // Blue team faces toward red team (positive Z direction)
+    this.player.yaw = Math.PI;
+    this.player.updateCamera();
 
     const hlGeo = new THREE.BoxGeometry(VOXEL_SIZE + 0.02, VOXEL_SIZE + 0.02, VOXEL_SIZE + 0.02);
     const hlMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.6 });
@@ -586,6 +589,10 @@ export class Game {
       const pos = this.getSafeSpawnPos(team);
       const { group, leftLeg, rightLeg, leftArm, rightArm, head } = this.createBotMesh(team);
       group.position.copy(pos);
+      // Set initial facing direction based on team
+      // Blue team faces toward red team (positive Z), Red team faces toward blue team (negative Z)
+      const initialYaw = team === 'blue' ? Math.PI : 0;
+      group.rotation.y = initialYaw;
       this.scene.add(group);
 
       const nameTag = this.createNameTag(team, botNames[i] || `Bot${i}`);
@@ -617,8 +624,8 @@ export class Game {
         head,
         walkCycle: Math.random() * Math.PI * 2,
         isMoving: false,
-        targetYaw: 0,
-        currentYaw: 0,
+        targetYaw: team === 'blue' ? Math.PI : 0,
+        currentYaw: team === 'blue' ? Math.PI : 0,
         behaviorTimer: 3 + Math.random() * 4,
         strafeDirection: Math.random() > 0.5 ? 1 : -1,
         stuckTimer: 0,
@@ -976,8 +983,12 @@ export class Game {
           bot.mesh.visible = true;
           bot.mesh.position.copy(bot.position);
           // Reset rotation and scale from death animation
-          bot.mesh.rotation.set(0, 0, 0);
+          // Set initial facing direction based on team
+          const respawnYaw = bot.team === 'blue' ? Math.PI : 0;
+          bot.mesh.rotation.set(0, respawnYaw, 0);
           bot.mesh.scale.set(1, 1, 1);
+          bot.targetYaw = respawnYaw;
+          bot.currentYaw = respawnYaw;
           bot.velocity.set(0, 0, 0);
           bot.isCrouching = false;
           bot.behaviorState = 'patrol';
