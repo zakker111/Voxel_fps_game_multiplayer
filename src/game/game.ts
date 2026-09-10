@@ -149,6 +149,8 @@ export class Game {
     velocity: THREE.Vector3;
     life: number;
     maxLife: number;
+    hasWhizzed: boolean;
+    hasImpacted: boolean;
   }> = [];
   
   // Collapse animation
@@ -639,16 +641,48 @@ export class Game {
       mesh,
       velocity,
       life: 0,
-      maxLife: 0.5 // 0.5 seconds lifetime
+      maxLife: 0.5, // 0.5 seconds lifetime
+      hasWhizzed: false,
+      hasImpacted: false
     });
   }
 
   private updateBulletTracers(dt: number): void {
     for (let i = this.bulletTracers.length - 1; i >= 0; i--) {
       const tracer = this.bulletTracers[i];
+      const prevPosition = tracer.mesh.position.clone();
       
       // Update position
       tracer.mesh.position.add(tracer.velocity.clone().multiplyScalar(dt));
+      
+      // Check if bullet passed near player (whizzing sound)
+      const distToPlayer = tracer.mesh.position.distanceTo(this.player.position);
+      if (distToPlayer < 3 && !tracer.hasWhizzed) {
+        // Calculate direction for panning
+        const toBullet = tracer.mesh.position.clone().sub(this.player.position);
+        const playerForward = this.player.getAimDirection();
+        const playerRight = new THREE.Vector3(-playerForward.z, 0, playerForward.x);
+        const direction = toBullet.dot(playerRight) / Math.max(0.1, distToPlayer);
+        
+        this.sounds.bulletWhizz(distToPlayer, direction);
+        tracer.hasWhizzed = true;
+      }
+      
+      // Check for bullet impact (hit voxel)
+      const voxelHit = this.world.raycast(prevPosition, tracer.velocity.clone().normalize(), tracer.velocity.length() * dt);
+      if (voxelHit && !tracer.hasImpacted) {
+        const impactDist = voxelHit.position.distanceTo(this.player.position);
+        if (impactDist < 20) {
+          // Calculate direction for panning
+          const toImpact = voxelHit.position.clone().sub(this.player.position);
+          const playerForward = this.player.getAimDirection();
+          const playerRight = new THREE.Vector3(-playerForward.z, 0, playerForward.x);
+          const direction = toImpact.dot(playerRight) / Math.max(0.1, impactDist);
+          
+          this.sounds.bulletImpact(impactDist, direction);
+          tracer.hasImpacted = true;
+        }
+      }
       
       // Update life
       tracer.life += dt;
@@ -1792,6 +1826,17 @@ export class Game {
           // Use bot's weapon fire rate
           const weaponFireRate = bot.weapon === 'rifle' ? 0.4 : 0.1;
           bot.shootTimer = weaponFireRate + Math.random() * 0.5;
+          
+          // Play spatial gunshot sound for nearby players
+          const distToPlayer = bot.position.distanceTo(this.player.position);
+          if (distToPlayer < 100 && distToPlayer > 5) {
+            // Calculate direction for panning (-1 = left, 1 = right)
+            const toBot = bot.position.clone().sub(this.player.position);
+            const playerForward = this.player.getAimDirection();
+            const playerRight = new THREE.Vector3(-playerForward.z, 0, playerForward.x);
+            const direction = toBot.dot(playerRight) / distToPlayer;
+            this.sounds.playDistantShot(bot.weapon, distToPlayer, direction);
+          }
 
           // Base accuracy: 25% (up from 15%)
           let accuracy = 0.25;
@@ -2270,15 +2315,16 @@ export class Game {
           // Calculate distance for volume
           const distance = remotePlayer.mesh.position.distanceTo(this.player.position);
           const maxDistance = 100;
-          if (distance < maxDistance) {
-            const volume = Math.max(0, 1 - distance / maxDistance);
+          if (distance < maxDistance && distance > 5) {
+            // Calculate direction for panning
+            const toPlayer = remotePlayer.mesh.position.clone().sub(this.player.position);
+            const playerForward = this.player.getAimDirection();
+            const playerRight = new THREE.Vector3(-playerForward.z, 0, playerForward.x);
+            const direction = toPlayer.dot(playerRight) / Math.max(0.1, distance);
             
-            // Play appropriate weapon sound based on equipment
-            if (remotePlayer.state.equipment === 'rifle') {
-              this.sounds.playSoundAtVolume('rifle', volume);
-            } else if (remotePlayer.state.equipment === 'smg') {
-              this.sounds.playSoundAtVolume('smg', volume);
-            }
+            // Play spatial gunshot sound
+            const weaponType = remotePlayer.state.equipment === 'rifle' ? 'rifle' : 'smg';
+            this.sounds.playDistantShot(weaponType, distance, direction);
           }
         }
       }

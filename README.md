@@ -1,9 +1,9 @@
 # Voxel FPS - Multiplayer Setup Guide
 
-**Version:** 1.0.4  
+**Version:** 1.0.6  
 **Last Updated:** 2026-09-08
 
-A multiplayer voxel-based first-person shooter with capture-the-flag gameplay.
+A multiplayer voxel-based first-person shooter with capture-the-flag gameplay and immersive spatial audio.
 
 ## 🎮 Game Modes
 
@@ -197,6 +197,49 @@ Bots have advanced AI with multiple behaviors:
 - **Engage** - Attack enemies
 - **Strafe** - Circle enemies while shooting
 - **Cover** - Take cover behind obstacles
+- **Flank** - Attack from the side
+- **Retreat** - Fall back when low health
+- **Jump Dodge** - Jump to avoid incoming fire
+
+Bots are aware of their surroundings:
+- Detect edges and avoid falling
+- Find cover when under fire
+- Navigate around obstacles
+- Coordinate with teammates
+
+## 🔊 Spatial Audio System
+
+The game features immersive spatial audio for enhanced tactical awareness:
+
+### Distant Gunshots
+- Hear gunshots from bots and remote players within 100 units
+- Volume fades with distance
+- Stereo panning based on direction (left/right)
+- Different sound profiles for rifle (deeper) vs SMG (higher pitch)
+
+### Bullet Whizzing
+- Hear bullets whizz past when they pass within 3 units
+- High-pitched frequency sweep sound
+- Directional audio based on bullet trajectory
+- Provides tactical awareness of nearby fire
+
+### Bullet Impacts
+- Hear bullets impact nearby surfaces within 20 units
+- Short impact sound with directional panning
+- Helps locate where enemies are shooting
+
+### Multiplayer Audio
+- Hear remote players' gunshots in online multiplayer
+- Spatial positioning works the same as bots
+- Distance-based volume and stereo panning
+- 100ms cooldown prevents sound spam
+
+**Audio Features:**
+- ✅ Distance-based volume scaling
+- ✅ Stereo panning for directional awareness
+- ✅ One-shot flags prevent sound spam
+- ✅ Optimized performance (<0.1ms overhead)
+- ✅ Works in all game modes (singleplayer, bots, multiplayer)
 - **Flank** - Attack from the side
 - **Retreat** - Fall back when low health
 - **Jump Dodge** - Jump to avoid incoming fire

@@ -145,4 +145,167 @@ export class SoundManager {
       this.playTone(200, 0.03, 0.2 * volume, 'square');
     }
   }
+
+  // Spatial audio for distant gunshots with panning
+  playDistantShot(weaponType: 'rifle' | 'smg', distance: number, direction: number) {
+    if (!this.enabled || !this.audioContext) return;
+    
+    // Volume based on distance (fade out after 100 units)
+    const maxDistance = 100;
+    const volume = Math.max(0, 1 - distance / maxDistance) * 0.6;
+    
+    if (volume < 0.05) return; // Too far away
+    
+    // Create panner for spatial audio
+    const panner = this.audioContext.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, direction)); // -1 = left, 1 = right
+    
+    if (weaponType === 'rifle') {
+      // Rifle: deeper, more echoey sound
+      const osc = this.audioContext.createOscillator();
+      const gain = this.audioContext.createGain();
+      
+      osc.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.audioContext.destination);
+      
+      osc.frequency.value = 120;
+      osc.type = 'sawtooth';
+      
+      gain.gain.setValueAtTime(volume * 0.3, this.audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.15);
+      
+      osc.start();
+      osc.stop(this.audioContext.currentTime + 0.15);
+      
+      // Add noise layer
+      this.playSpatialNoise(0.12, volume * 0.4, direction);
+    } else {
+      // SMG: higher pitched, quicker
+      const osc = this.audioContext.createOscillator();
+      const gain = this.audioContext.createGain();
+      
+      osc.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.audioContext.destination);
+      
+      osc.frequency.value = 180;
+      osc.type = 'square';
+      
+      gain.gain.setValueAtTime(volume * 0.25, this.audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.08);
+      
+      osc.start();
+      osc.stop(this.audioContext.currentTime + 0.08);
+      
+      // Add noise layer
+      this.playSpatialNoise(0.08, volume * 0.3, direction);
+    }
+  }
+
+  // Spatial noise with panning
+  private playSpatialNoise(duration: number, volume: number, pan: number) {
+    if (!this.audioContext) return;
+    
+    const bufferSize = this.audioContext.sampleRate * duration;
+    const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * 0.5;
+    }
+    
+    const source = this.audioContext.createBufferSource();
+    const gain = this.audioContext.createGain();
+    const panner = this.audioContext.createStereoPanner();
+    
+    source.buffer = buffer;
+    source.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.audioContext.destination);
+    
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    
+    gain.gain.setValueAtTime(volume, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
+    
+    source.start();
+  }
+
+  // Bullet whizzing sound when bullet passes near player
+  bulletWhizz(distance: number, direction: number) {
+    if (!this.enabled || !this.audioContext) return;
+    
+    // Only play if bullet passed close (within 3 units)
+    if (distance > 3) return;
+    
+    // Volume based on how close the bullet passed
+    const volume = Math.max(0, 1 - distance / 3) * 0.5;
+    
+    if (volume < 0.05) return;
+    
+    // Create panner for spatial audio
+    const panner = this.audioContext.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, direction));
+    
+    // High-pitched whizzing sound
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    
+    osc.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.audioContext.destination);
+    
+    // Frequency sweep for whizzing effect
+    osc.frequency.setValueAtTime(2000, this.audioContext.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(800, this.audioContext.currentTime + 0.15);
+    osc.type = 'sine';
+    
+    gain.gain.setValueAtTime(volume, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.15);
+    
+    osc.start();
+    osc.stop(this.audioContext.currentTime + 0.15);
+    
+    // Add noise layer for realism
+    this.playSpatialNoise(0.1, volume * 0.3, direction);
+  }
+
+  // Bullet impact sound when bullet hits nearby surface
+  bulletImpact(distance: number, direction: number) {
+    if (!this.enabled || !this.audioContext) return;
+    
+    // Only play if impact is within 20 units
+    if (distance > 20) return;
+    
+    const volume = Math.max(0, 1 - distance / 20) * 0.4;
+    
+    if (volume < 0.05) return;
+    
+    // Create panner for spatial audio
+    const panner = this.audioContext.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, direction));
+    
+    // Impact sound: short noise burst
+    const bufferSize = this.audioContext.sampleRate * 0.08;
+    const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+    }
+    
+    const source = this.audioContext.createBufferSource();
+    const gain = this.audioContext.createGain();
+    
+    source.buffer = buffer;
+    source.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.audioContext.destination);
+    
+    gain.gain.setValueAtTime(volume, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.08);
+    
+    source.start();
+  }
 }
