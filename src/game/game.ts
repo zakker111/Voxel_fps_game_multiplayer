@@ -1838,15 +1838,20 @@ export class Game {
           bot.stuckTimer = 0;
         }
 
-        // Set target yaw - ALWAYS face movement direction when moving
-        if (bot.isMoving) {
+        // Set target yaw - ALWAYS face enemy when in combat, otherwise face movement
+        if (enemyTarget && distToEnemy < 50) {
+          // In combat - ALWAYS face the enemy
+          const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+          bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
+        } else if (bot.isMoving) {
+          // Not in combat - face movement direction
           bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
         }
       } else {
         bot.isMoving = false;
         bot.stuckTimer = 0;
-        // When not moving, face enemy if in combat range
-        if (enemyTarget && distToEnemy < 40) {
+        // When not moving, ALWAYS face enemy if in combat range
+        if (enemyTarget && distToEnemy < 50) {
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
           bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
         }
@@ -2495,6 +2500,7 @@ export class Game {
       this.networkClient = null;
     }
     
+    // Clean up event listeners
     window.removeEventListener('resize', this.boundResize);
     this.canvas.removeEventListener('mousedown', this.boundMouseDown);
     this.canvas.removeEventListener('mouseup', this.boundMouseUp);
@@ -2502,6 +2508,57 @@ export class Game {
     document.removeEventListener('keydown', this.boundKeyDown);
     document.removeEventListener('keyup', this.boundKeyUp);
     document.removeEventListener('mousemove', this.boundMouseMove);
+    
+    // Clean up bullet tracers
+    for (const tracer of this.bulletTracers) {
+      this.scene.remove(tracer.mesh);
+      tracer.mesh.geometry.dispose();
+      (tracer.mesh.material as THREE.Material).dispose();
+    }
+    this.bulletTracers = [];
+    
+    // Clean up collapse animations
+    for (const anim of this.collapseAnimations) {
+      this.scene.remove(anim.mesh);
+      anim.mesh.geometry.dispose();
+      (anim.mesh.material as THREE.Material).dispose();
+    }
+    this.collapseAnimations = [];
+    
+    // Clean up death animations
+    for (const [uuid, anim] of this.deathAnimations) {
+      this.scene.remove(anim.mesh);
+    }
+    this.deathAnimations.clear();
+    
+    // Clean up remote players
+    for (const [playerId, remotePlayer] of this.remotePlayers) {
+      this.scene.remove(remotePlayer.mesh);
+    }
+    this.remotePlayers.clear();
+    
+    // Clean up bots
+    for (const bot of this.bots) {
+      this.scene.remove(bot.mesh);
+    }
+    this.bots = [];
+    
+    // Clean up world
+    this.scene.remove(this.world.mesh);
+    
+    // Clean up scene
+    while (this.scene.children.length > 0) {
+      const child = this.scene.children[0];
+      this.scene.remove(child);
+      if ((child as THREE.Mesh).geometry) {
+        (child as THREE.Mesh).geometry.dispose();
+      }
+      if ((child as THREE.Mesh).material) {
+        ((child as THREE.Mesh).material as THREE.Material).dispose();
+      }
+    }
+    
+    // Dispose renderer
     this.renderer.dispose();
   }
 }
