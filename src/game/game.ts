@@ -193,6 +193,7 @@ export class Game {
     this.addTeamZoneMarkers();
 
     this.player = new Player(this.world);
+    this.player.team = 'blue'; // Explicitly set team
     const blueSpawn = this.getSafeSpawnPos('blue');
     this.player.position.copy(blueSpawn);
     // Blue team faces toward red team (positive Z direction)
@@ -1756,10 +1757,14 @@ export class Game {
     // Handle server messages
     this.networkClient.onMessage('playerJoined', (msg) => {
       console.log('Player joined:', msg.playerId);
-      if (msg.playerId !== this.localPlayerId) {
+      // Check if this is us (first playerJoined message we receive is ourselves)
+      if (!this.localPlayerId) {
+        this.localPlayerId = msg.playerId;
+        this.playerTeam = msg.state.team;
+        this.player.team = msg.state.team;
+        console.log('This is us! ID:', msg.playerId, 'Team:', msg.state.team);
+      } else if (msg.playerId !== this.localPlayerId) {
         this.createRemotePlayer(msg.playerId, msg.state);
-      } else {
-        console.log('This is us!', msg.state);
       }
     });
 
@@ -1925,6 +1930,23 @@ export class Game {
     if (change.type !== 0) {
       this.world.updateVoxelColor(change.x, change.y, change.z, change.type, change.durability);
     }
+  }
+
+  // Change team for online multiplayer
+  changeTeam(team: 'red' | 'blue'): void {
+    if (this.gameMode !== 'online' || !this.networkClient) return;
+    
+    this.playerTeam = team;
+    this.player.team = team;
+    this.networkClient.sendJoin(team);
+    
+    // Respawn player in new team's spawn zone
+    const spawnPos = this.getSafeSpawnPos(team);
+    this.player.position.copy(spawnPos);
+    this.player.yaw = team === 'blue' ? Math.PI : 0;
+    this.player.updateCamera();
+    
+    this.showMessage(`Switched to ${team.toUpperCase()} team`);
   }
 
   destroy(): void {

@@ -12,12 +12,13 @@ function App() {
   });
   const [started, setStarted] = useState(false);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'singleplayer' | 'online' | null>(null);
+  const [selectedTeam, setSelectedTeam] = useState<'red' | 'blue'>('blue');
 
   useEffect(() => {
     if (!canvasRef.current || gameRef.current || !gameMode) return;
     
     const canvas = canvasRef.current;
-    console.log('Creating game with mode:', gameMode, 'canvas size:', canvas.width, canvas.height);
+    console.log('Creating game with mode:', gameMode, 'team:', selectedTeam, 'canvas size:', canvas.width, canvas.height);
     
     // Ensure canvas has dimensions
     if (canvas.width === 0 || canvas.height === 0) {
@@ -27,6 +28,13 @@ function App() {
     
     const game = new Game(canvas, gameMode);
     game.onStateChange = (state) => setGameState(state);
+    
+    // Set team for online multiplayer
+    if (gameMode === 'online') {
+      game.playerTeam = selectedTeam;
+      game.player.team = selectedTeam;
+    }
+    
     game.start();
     gameRef.current = game;
     console.log('Game created and started');
@@ -40,7 +48,7 @@ function App() {
       game.destroy(); 
       gameRef.current = null;
     };
-  }, [gameMode]);
+  }, [gameMode, selectedTeam]);
 
   const handleStart = (mode: 'multiplayer' | 'singleplayer' | 'online') => {
     setGameMode(mode);
@@ -85,6 +93,38 @@ function App() {
                 🧪 Singleplayer
               </button>
             </div>
+            
+            {/* Team selection for online mode */}
+            {gameMode === 'online' && !started && (
+              <div className="mb-6 bg-gray-900/60 rounded-xl p-4 max-w-md mx-auto">
+                <h3 className="text-white font-bold mb-3 text-center">Select Your Team</h3>
+                <div className="flex gap-4 justify-center">
+                  <button 
+                    onClick={() => setSelectedTeam('blue')}
+                    className={`px-6 py-3 rounded-xl font-bold text-lg transition-all ${
+                      selectedTeam === 'blue' 
+                        ? 'bg-blue-600 text-white ring-4 ring-blue-400' 
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    🔵 Blue Team
+                  </button>
+                  <button 
+                    onClick={() => setSelectedTeam('red')}
+                    className={`px-6 py-3 rounded-xl font-bold text-lg transition-all ${
+                      selectedTeam === 'red' 
+                        ? 'bg-red-600 text-white ring-4 ring-red-400' 
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    🔴 Red Team
+                  </button>
+                </div>
+                <p className="text-gray-400 text-xs text-center mt-3">
+                  {selectedTeam === 'blue' ? 'Spawn at south, push north to capture red flag' : 'Spawn at north, push south to capture blue flag'}
+                </p>
+              </div>
+            )}
             <div className="mt-6 bg-gray-900/60 rounded-xl p-5 text-left max-w-xl mx-auto text-sm">
               <div className="grid grid-cols-2 gap-4">
                 <div>

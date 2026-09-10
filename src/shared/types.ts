@@ -80,7 +80,7 @@ export interface GameState {
 }
 
 // Constants (shared between client and server)
-export const WORLD_SIZE = 150;
+export const WORLD_SIZE = 250;
 export const CHUNK_SIZE = 16;
 export const GROUND_LEVEL = 8;
 export const MAX_BUILD_UP = 20;
@@ -103,7 +103,7 @@ export const CROUCH_HEIGHT = 1.2;
 export const PLAYER_RADIUS = 0.3;
 
 export const WEAPONS = {
-  rifle: { fireRate: 0.4, damage: { head: 100, body: 34 }, spread: 0.01 },
+  rifle: { fireRate: 0.4, damage: { head: 100, body: 34 }, spread: 0.0005 },
   smg: { fireRate: 0.1, damage: { head: 100, body: 34 }, spread: 0.04 },
 };
 
