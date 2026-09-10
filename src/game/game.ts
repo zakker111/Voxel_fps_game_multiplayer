@@ -393,6 +393,9 @@ export class Game {
   private shoot(now: number): void {
     const weapon = this.weapons[this.equipment];
     
+    // Safety check - should only be called for rifle/smg
+    if (!weapon) return;
+    
     // Can't shoot while reloading
     if (weapon.isReloading) {
       this.showMessage('Reloading...');
@@ -566,6 +569,12 @@ export class Game {
 
   private startReload(): void {
     const weapon = this.weapons[this.equipment];
+    
+    // Can only reload weapons with magazines
+    if (!weapon || this.equipment === 'spade' || this.equipment === 'pickaxe') {
+      return;
+    }
+    
     if (weapon.isReloading || weapon.currentAmmo === weapon.magazineSize) return;
     
     weapon.isReloading = true;
@@ -580,6 +589,11 @@ export class Game {
 
   private updateReload(dt: number): void {
     const weapon = this.weapons[this.equipment];
+    
+    // Only process reload for weapons with magazines
+    if (!weapon || this.equipment === 'spade' || this.equipment === 'pickaxe') {
+      return;
+    }
     
     if (weapon.isReloading) {
       const now = performance.now() / 1000;

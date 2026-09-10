@@ -1,5 +1,8 @@
 # Voxel FPS - Multiplayer Setup Guide
 
+**Version:** 1.0.4  
+**Last Updated:** 2026-09-08
+
 A multiplayer voxel-based first-person shooter with capture-the-flag gameplay.
 
 ## 🎮 Game Modes
@@ -120,16 +123,49 @@ To play over the internet, you'll need to forward port 3000 on your router:
 - **Ctrl/C** - Crouch
 
 ### Equipment
-- **1** - 🎯 Rifle (accurate, iron sights)
-- **2** - 💨 SMG (fast fire rate, iron sights)
+- **1** - 🎯 Rifle (10-round magazine, accurate, iron sights)
+- **2** - 💨 SMG (30-round magazine, fast fire rate, iron sights)
 - **3** - 🪣 Spade (dig 2 blocks instantly)
 - **4** - ⛏️ Pickaxe (harvest blocks, 3 hits)
 
 ### Actions
 - **Left Click** - Shoot / Use tool
 - **Right Click** - Toggle iron sights (weapons) / Build (tools)
+- **R** - Reload weapon (rifle/smg only)
 - **Mouse Wheel** - Switch equipment
 - **ESC** - Release mouse cursor
+
+### Accuracy Tips
+- **Standing still** - Base accuracy
+- **Walking** - Slightly less accurate
+- **Running/Sprinting** - Much less accurate
+- **Crouching** - More accurate
+- **Aiming (Right Click)** - Most accurate (70% spread reduction)
+
+## 🔫 Weapon System
+
+### Rifle
+- **Magazine Size:** 10 rounds
+- **Reload Time:** 2.0 seconds
+- **Fire Rate:** 0.4 seconds
+- **Damage:** 100 (headshot) / 34 (body)
+- **Accuracy:** Very high (0.0005 spread)
+- **Features:** Iron sights, reload animation, unlimited ammo
+
+### SMG
+- **Magazine Size:** 30 rounds
+- **Reload Time:** 1.5 seconds
+- **Fire Rate:** 0.1 seconds
+- **Damage:** 100 (headshot) / 34 (body)
+- **Accuracy:** Moderate (0.04 spread)
+- **Features:** Iron sights, reload animation, unlimited ammo
+
+### Reloading
+- Press **R** to reload weapons
+- Weapons auto-reload when magazine is empty
+- Reload animation plays during reload
+- Cannot reload while shooting
+- Tools (spade/pickaxe) cannot be reloaded
 
 ## 🏗️ Building System
 
