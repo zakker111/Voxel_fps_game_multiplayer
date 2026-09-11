@@ -2650,13 +2650,16 @@ export class Game {
       }
 
       // VISUAL UPDATES
-      bot.mesh.position.copy(bot.position);
-      
-      // Crouch visual
-      const targetScale = bot.isCrouching ? 0.7 : 1.0;
-      const currentScale = bot.mesh.scale.y;
-      bot.mesh.scale.y = currentScale + (targetScale - currentScale) * 0.2;
-      bot.mesh.position.y = bot.position.y + (bot.isCrouching ? -0.3 : 0);
+      // Only update mesh position if not in death animation
+      if (!this.deathAnimations.has(bot.mesh.uuid)) {
+        bot.mesh.position.copy(bot.position);
+        
+        // Crouch visual
+        const targetScale = bot.isCrouching ? 0.7 : 1.0;
+        const currentScale = bot.mesh.scale.y;
+        bot.mesh.scale.y = currentScale + (targetScale - currentScale) * 0.2;
+        bot.mesh.position.y = bot.position.y + (bot.isCrouching ? -0.3 : 0);
+      }
       
       // Smooth rotation
       const yawDiff = bot.targetYaw - bot.currentYaw;
@@ -2857,17 +2860,10 @@ export class Game {
   }
 
   private checkFlagCaptures(): void {
-    const captureDistance = 3; // Distance to capture flag
-    
-    // Check player capture
-    if (!this.player.isDead) {
-      const enemyFlag = this.playerTeam === 'blue' ? RED_FLAG_POS : BLUE_FLAG_POS;
-      const distToFlag = Math.sqrt(
-        Math.pow(this.player.position.x - enemyFlag.x, 2) +
-        Math.pow(this.player.position.z - enemyFlag.z, 2)
-      );
-      
-      if (distToFlag < captureDistance) {
+    // Check if player captured the flag (brought enemy flag to own base)
+    if (this.player.carryingFlag && !this.player.isDead) {
+      // Check if player is in their own capture zone
+      if (this.isInCaptureZone(this.player.position, this.playerTeam)) {
         if (this.playerTeam === 'blue') {
           this.blueCaptures++;
           this.showMessage('🏁 BLUE TEAM CAPTURED THE FLAG!');
@@ -2875,22 +2871,51 @@ export class Game {
           this.redCaptures++;
           this.showMessage('🏁 RED TEAM CAPTURED THE FLAG!');
         }
+        
+        // Remove flag from player
+        this.player.carryingFlag = false;
+        if (this.player.flagMesh) {
+          this.scene.remove(this.player.flagMesh);
+          // Dispose of all children
+          this.player.flagMesh.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.geometry.dispose();
+              if (child.material) {
+                (child.material as THREE.Material).dispose();
+              }
+            }
+          });
+          this.player.flagMesh = null;
+        }
+        
+        // Return the captured flag to its base
+        const enemyFlagTeam = this.playerTeam === 'blue' ? 'red' : 'blue';
+        if (enemyFlagTeam === 'blue') {
+          this.blueFlagAtBase = true;
+          if (this.blueFlagMesh) {
+            this.blueFlagMesh.visible = true;
+            this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, BLUE_FLAG_POS.z);
+          }
+        } else {
+          this.redFlagAtBase = true;
+          if (this.redFlagMesh) {
+            this.redFlagMesh.visible = true;
+            this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, RED_FLAG_POS.z);
+          }
+        }
+        
         // Respawn player at their base
         this.player.respawn(this.playerTeam);
+        this.sounds.capture();
       }
     }
     
     // Check bot captures
     for (const bot of this.bots) {
-      if (bot.isDead) continue;
+      if (bot.isDead || !bot.carryingFlag) continue;
       
-      const enemyFlag = bot.team === 'blue' ? RED_FLAG_POS : BLUE_FLAG_POS;
-      const distToFlag = Math.sqrt(
-        Math.pow(bot.position.x - enemyFlag.x, 2) +
-        Math.pow(bot.position.z - enemyFlag.z, 2)
-      );
-      
-      if (distToFlag < captureDistance) {
+      // Check if bot is in their own capture zone
+      if (this.isInCaptureZone(bot.position, bot.team)) {
         if (bot.team === 'blue') {
           this.blueCaptures++;
           this.showMessage('🏁 BLUE BOT CAPTURED THE FLAG!');
@@ -2898,10 +2923,43 @@ export class Game {
           this.redCaptures++;
           this.showMessage('🏁 RED BOT CAPTURED THE FLAG!');
         }
+        
+        // Remove flag from bot
+        bot.carryingFlag = false;
+        if (bot.flagMesh) {
+          bot.mesh.remove(bot.flagMesh);
+          // Dispose of all children
+          bot.flagMesh.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.geometry.dispose();
+              if (child.material) {
+                (child.material as THREE.Material).dispose();
+              }
+            }
+          });
+          bot.flagMesh = null;
+        }
+        
+        // Return the captured flag to its base
+        const enemyFlagTeam = bot.team === 'blue' ? 'red' : 'blue';
+        if (enemyFlagTeam === 'blue') {
+          this.blueFlagAtBase = true;
+          if (this.blueFlagMesh) {
+            this.blueFlagMesh.visible = true;
+            this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, BLUE_FLAG_POS.z);
+          }
+        } else {
+          this.redFlagAtBase = true;
+          if (this.redFlagMesh) {
+            this.redFlagMesh.visible = true;
+            this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, RED_FLAG_POS.z);
+          }
+        }
+        
         // Respawn bot at their base
-        this.dropBotFlag(bot);
         bot.isDead = true;
         bot.respawnTimer = 5;
+        this.sounds.capture();
       }
     }
   }
