@@ -147,8 +147,8 @@ export class Game {
   isAiming: boolean = false;
   aimTransition: number = 0;
 
-  hipPosition: THREE.Vector3 = new THREE.Vector3(0.3, -0.25, -0.5);
-  adsPosition: THREE.Vector3 = new THREE.Vector3(0, -0.15, -0.35);
+  hipPosition: THREE.Vector3 = new THREE.Vector3(0.35, -0.3, -0.6);
+  adsPosition: THREE.Vector3 = new THREE.Vector3(0, -0.2, -0.45);
   
   // Pickaxe animation
   pickaxeAnimationTime: number = 0;
@@ -1364,10 +1364,11 @@ export class Game {
       // Randomly assign weapon (rifle or SMG)
       const botWeapon = Math.random() > 0.5 ? 'rifle' : 'smg';
       const weaponMesh = this.createBotWeaponMesh(botWeapon);
-      // Position weapon in bot's hands (right hand, chest level)
-      weaponMesh.position.set(0.25, 1.1, -0.3);
-      // Slight tilt to look like holding weapon
-      weaponMesh.rotation.x = -0.1;
+      // Position weapon prominently in bot's hands (right hand, chest level, more forward)
+      weaponMesh.position.set(0.3, 1.15, -0.4);
+      // Tilt to look like holding weapon ready
+      weaponMesh.rotation.x = -0.15;
+      weaponMesh.rotation.y = 0.05; // Slight angle
       group.add(weaponMesh);
 
       this.bots.push({
@@ -1477,58 +1478,58 @@ export class Game {
     const weaponGroup = new THREE.Group();
     
     if (weaponType === 'rifle') {
-      // Rifle - longer barrel, wooden stock
-      const barrelGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.8, 8);
+      // Rifle - longer barrel, wooden stock, more visible
+      const barrelGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.0, 8);
       const barrelMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
       const barrel = new THREE.Mesh(barrelGeo, barrelMat);
       barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0, 0, -0.4);
+      barrel.position.set(0, 0, -0.5);
       weaponGroup.add(barrel);
       
-      const receiverGeo = new THREE.BoxGeometry(0.1, 0.08, 0.3);
+      const receiverGeo = new THREE.BoxGeometry(0.15, 0.12, 0.4);
       const receiverMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
       const receiver = new THREE.Mesh(receiverGeo, receiverMat);
       receiver.position.set(0, 0, 0);
       weaponGroup.add(receiver);
       
-      const stockGeo = new THREE.BoxGeometry(0.08, 0.1, 0.25);
+      const stockGeo = new THREE.BoxGeometry(0.12, 0.15, 0.35);
       const stockMat = new THREE.MeshLambertMaterial({ color: 0x5c3a1e });
       const stock = new THREE.Mesh(stockGeo, stockMat);
-      stock.position.set(0, -0.02, 0.25);
+      stock.position.set(0, -0.02, 0.35);
       weaponGroup.add(stock);
       
-      // Small magazine
-      const magGeo = new THREE.BoxGeometry(0.05, 0.1, 0.06);
+      // Magazine - more visible
+      const magGeo = new THREE.BoxGeometry(0.08, 0.15, 0.1);
       const magMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
       const mag = new THREE.Mesh(magGeo, magMat);
-      mag.position.set(0, -0.1, 0);
+      mag.position.set(0, -0.12, 0);
       weaponGroup.add(mag);
     } else {
-      // SMG - shorter barrel, compact
-      const barrelGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.5, 8);
+      // SMG - shorter barrel, compact, more visible
+      const barrelGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.7, 8);
       const barrelMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
       const barrel = new THREE.Mesh(barrelGeo, barrelMat);
       barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0, 0, -0.25);
+      barrel.position.set(0, 0, -0.35);
       weaponGroup.add(barrel);
       
-      const receiverGeo = new THREE.BoxGeometry(0.12, 0.1, 0.2);
+      const receiverGeo = new THREE.BoxGeometry(0.15, 0.13, 0.3);
       const receiverMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a });
       const receiver = new THREE.Mesh(receiverGeo, receiverMat);
       receiver.position.set(0, 0, 0);
       weaponGroup.add(receiver);
       
-      const stockGeo = new THREE.BoxGeometry(0.06, 0.08, 0.15);
+      const stockGeo = new THREE.BoxGeometry(0.1, 0.12, 0.2);
       const stockMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
       const stock = new THREE.Mesh(stockGeo, stockMat);
-      stock.position.set(0, -0.01, 0.15);
+      stock.position.set(0, -0.01, 0.2);
       weaponGroup.add(stock);
       
-      // Large magazine
-      const magGeo = new THREE.BoxGeometry(0.08, 0.18, 0.08);
+      // Large magazine - very visible
+      const magGeo = new THREE.BoxGeometry(0.1, 0.25, 0.12);
       const magMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
       const mag = new THREE.Mesh(magGeo, magMat);
-      mag.position.set(0, -0.14, 0);
+      mag.position.set(0, -0.18, 0);
       weaponGroup.add(mag);
     }
     
@@ -1553,108 +1554,108 @@ export class Game {
   }
 
   private createWeaponModels(): void {
-    // Rifle - WW2 bolt action with iron sights
+    // Rifle - WW2 bolt action with iron sights, more visible
     const rifle = new THREE.Group();
 
     const rifleBody = new THREE.Mesh(
-      new THREE.BoxGeometry(0.06, 0.06, 0.45),
+      new THREE.BoxGeometry(0.08, 0.08, 0.55),
       new THREE.MeshLambertMaterial({ color: 0x2a2a2a })
     );
-    rifleBody.position.set(0, 0, -0.1);
+    rifleBody.position.set(0, 0, -0.15);
     rifle.add(rifleBody);
 
     const rifleBarrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.015, 0.015, 0.5, 8),
+      new THREE.CylinderGeometry(0.025, 0.025, 0.6, 8),
       new THREE.MeshLambertMaterial({ color: 0x1a1a1a })
     );
     rifleBarrel.rotation.x = Math.PI / 2;
-    rifleBarrel.position.set(0, 0.01, -0.55);
+    rifleBarrel.position.set(0, 0.01, -0.65);
     rifle.add(rifleBarrel);
 
     const rifleStock = new THREE.Mesh(
-      new THREE.BoxGeometry(0.06, 0.1, 0.25),
+      new THREE.BoxGeometry(0.08, 0.12, 0.3),
       new THREE.MeshLambertMaterial({ color: 0x5c3a1e })
     );
-    rifleStock.position.set(0, -0.02, 0.22);
+    rifleStock.position.set(0, -0.02, 0.25);
     rifle.add(rifleStock);
 
-    // Iron sights
+    // Iron sights - more visible
     const rearSight = new THREE.Mesh(
-      new THREE.BoxGeometry(0.03, 0.025, 0.01),
+      new THREE.BoxGeometry(0.04, 0.035, 0.015),
       new THREE.MeshLambertMaterial({ color: 0x111111 })
     );
-    rearSight.position.set(0, 0.055, 0.05);
+    rearSight.position.set(0, 0.065, 0.05);
     rifle.add(rearSight);
 
     const frontSight = new THREE.Mesh(
-      new THREE.BoxGeometry(0.015, 0.03, 0.01),
+      new THREE.BoxGeometry(0.02, 0.04, 0.015),
       new THREE.MeshLambertMaterial({ color: 0x111111 })
     );
-    frontSight.position.set(0, 0.055, -0.45);
+    frontSight.position.set(0, 0.065, -0.55);
     rifle.add(frontSight);
 
     const rifleMag = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.06, 0.1),
+      new THREE.BoxGeometry(0.06, 0.08, 0.12),
       new THREE.MeshLambertMaterial({ color: 0x2a2a2a })
     );
-    rifleMag.position.set(0, -0.06, -0.05);
+    rifleMag.position.set(0, -0.08, -0.05);
     rifle.add(rifleMag);
 
     rifle.position.copy(this.hipPosition);
     this.weaponModels.set('rifle', rifle);
 
-    // SMG - WW2 Thompson style with iron sights
+    // SMG - WW2 Thompson style with iron sights, more visible
     const smg = new THREE.Group();
 
     const smgBody = new THREE.Mesh(
-      new THREE.BoxGeometry(0.07, 0.07, 0.25),
+      new THREE.BoxGeometry(0.09, 0.09, 0.35),
       new THREE.MeshLambertMaterial({ color: 0x2a2a2a })
     );
-    smgBody.position.set(0, 0, -0.05);
+    smgBody.position.set(0, 0, -0.1);
     smg.add(smgBody);
 
     const smgBarrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.015, 0.015, 0.25, 8),
+      new THREE.CylinderGeometry(0.025, 0.025, 0.35, 8),
       new THREE.MeshLambertMaterial({ color: 0x1a1a1a })
     );
     smgBarrel.rotation.x = Math.PI / 2;
-    smgBarrel.position.set(0, 0.01, -0.3);
+    smgBarrel.position.set(0, 0.01, -0.4);
     smg.add(smgBarrel);
 
     const smgStock = new THREE.Mesh(
-      new THREE.BoxGeometry(0.05, 0.08, 0.12),
+      new THREE.BoxGeometry(0.07, 0.1, 0.18),
       new THREE.MeshLambertMaterial({ color: 0x5c3a1e })
     );
-    smgStock.position.set(0, -0.01, 0.15);
+    smgStock.position.set(0, -0.01, 0.18);
     smg.add(smgStock);
 
-    // Iron sights
+    // Iron sights - more visible
     const smgRearSight = new THREE.Mesh(
-      new THREE.BoxGeometry(0.025, 0.02, 0.01),
+      new THREE.BoxGeometry(0.035, 0.03, 0.015),
       new THREE.MeshLambertMaterial({ color: 0x111111 })
     );
-    smgRearSight.position.set(0, 0.055, 0.0);
+    smgRearSight.position.set(0, 0.065, 0.0);
     smg.add(smgRearSight);
 
     const smgFrontSight = new THREE.Mesh(
-      new THREE.BoxGeometry(0.012, 0.025, 0.01),
+      new THREE.BoxGeometry(0.018, 0.035, 0.015),
       new THREE.MeshLambertMaterial({ color: 0x111111 })
     );
-    smgFrontSight.position.set(0, 0.055, -0.25);
+    smgFrontSight.position.set(0, 0.065, -0.35);
     smg.add(smgFrontSight);
 
     const smgMag = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.035, 0.035, 0.12, 8),
+      new THREE.CylinderGeometry(0.045, 0.045, 0.18, 8),
       new THREE.MeshLambertMaterial({ color: 0x1a1a1a })
     );
-    smgMag.position.set(0, -0.1, 0.02);
+    smgMag.position.set(0, -0.12, 0.02);
     smg.add(smgMag);
 
     const smgGrip = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.08, 0.04),
+      new THREE.BoxGeometry(0.05, 0.1, 0.05),
       new THREE.MeshLambertMaterial({ color: 0x5c3a1e })
     );
-    smgGrip.position.set(0, -0.08, 0.08);
+    smgGrip.position.set(0, -0.1, 0.1);
     smg.add(smgGrip);
 
     smg.position.copy(this.hipPosition);
@@ -2436,23 +2437,29 @@ export class Game {
       bot.currentYaw += normalizedDiff * Math.min(dt * 10, 1); // Faster rotation
       bot.mesh.rotation.y = bot.currentYaw;
       
-      // Weapon aiming animation - FIXED: Smooth interpolation
+      // Weapon aiming animation - more dramatic and visible
       if (bot.weaponMesh) {
-        const hipPosition = new THREE.Vector3(0.25, 1.1, -0.3);
-        const aimPosition = new THREE.Vector3(0.15, 1.2, -0.4);
+        const hipPosition = new THREE.Vector3(0.3, 1.15, -0.4);
+        const aimPosition = new THREE.Vector3(0.1, 1.25, -0.5); // Move more forward and up when aiming
         
         // Store target position
         const targetPosition = new THREE.Vector3();
         targetPosition.lerpVectors(hipPosition, aimPosition, bot.aimTransition);
         
         // Smoothly interpolate current position towards target
-        bot.weaponMesh.position.lerp(targetPosition, Math.min(dt * 10, 1));
+        bot.weaponMesh.position.lerp(targetPosition, Math.min(dt * 12, 1));
         
-        // Smooth rotation towards target (tilt up when aiming)
-        const baseTilt = -0.1; // Base tilt for holding weapon
-        const aimTilt = -0.2; // More tilt when aiming
+        // Smooth rotation towards target (more dramatic tilt when aiming)
+        const baseTilt = -0.15; // Base tilt for holding weapon
+        const aimTilt = -0.35; // Much more tilt when aiming
         const targetRotationX = baseTilt + (aimTilt - baseTilt) * bot.aimTransition;
-        bot.weaponMesh.rotation.x += (targetRotationX - bot.weaponMesh.rotation.x) * Math.min(dt * 10, 1);
+        bot.weaponMesh.rotation.x += (targetRotationX - bot.weaponMesh.rotation.x) * Math.min(dt * 12, 1);
+        
+        // Add slight Y rotation when aiming (weapon angles toward target)
+        const baseYaw = 0.05;
+        const aimYaw = 0.0; // Straight when aiming
+        const targetRotationY = baseYaw + (aimYaw - baseYaw) * bot.aimTransition;
+        bot.weaponMesh.rotation.y += (targetRotationY - bot.weaponMesh.rotation.y) * Math.min(dt * 12, 1);
       }
       
       // Walking animation
@@ -2482,30 +2489,40 @@ export class Game {
         const headYaw = targetHeadYaw - bot.currentYaw;
         const normalizedHeadYaw = Math.atan2(Math.sin(headYaw), Math.cos(headYaw));
         
-        // Clamp head rotation to ±60 degrees (±1.05 radians)
-        const clampedHeadYaw = Math.max(-1.05, Math.min(1.05, normalizedHeadYaw));
+        // Clamp head rotation to ±70 degrees (±1.22 radians) - more range
+        const clampedHeadYaw = Math.max(-1.22, Math.min(1.22, normalizedHeadYaw));
         
-        // Smoothly interpolate head rotation
-        bot.head.rotation.y = bot.head.rotation.y + (clampedHeadYaw - bot.head.rotation.y) * Math.min(dt * 10, 1);
+        // Smoothly interpolate head rotation (faster for combat)
+        bot.head.rotation.y = bot.head.rotation.y + (clampedHeadYaw - bot.head.rotation.y) * Math.min(dt * 12, 1);
+        
+        // Look slightly down at enemy (pitch)
+        const distToEnemyVertical = Math.abs(toEnemy.y);
+        const targetPitch = distToEnemy < 10 ? -0.2 : -0.1; // Look down more when close
+        bot.head.rotation.x += (targetPitch - bot.head.rotation.x) * Math.min(dt * 8, 1);
         
         // Reset look around timer when in combat
         bot.lookAroundTimer = 0;
       } else if (bot.isMoving) {
-        // When moving, head faces forward (relative to body)
-        bot.head.rotation.y *= 0.9; // Smoothly return to center
+        // When moving, head faces forward with slight movement
+        bot.head.rotation.y *= 0.92; // Smoothly return to center
+        bot.head.rotation.x *= 0.95; // Return pitch to center
         bot.lookAroundTimer = 0;
       } else {
-        // When stationary and not shooting, look around human-like
+        // When stationary and not shooting, look around human-like (more dramatic)
         bot.lookAroundTimer -= dt;
         
         if (bot.lookAroundTimer <= 0) {
-          // Set new look around target (random direction)
-          bot.lookAroundTarget = (Math.random() - 0.5) * 1.5; // ±0.75 radians (±43 degrees)
-          bot.lookAroundTimer = 2 + Math.random() * 3; // Look around every 2-5 seconds
+          // Set new look around target (random direction, more dramatic)
+          bot.lookAroundTarget = (Math.random() - 0.5) * 2.0; // ±1.0 radians (±57 degrees)
+          bot.lookAroundTimer = 1.5 + Math.random() * 2.5; // Look around every 1.5-4 seconds
+          
+          // Also add pitch variation (look up/down slightly)
+          const pitchTarget = (Math.random() - 0.5) * 0.4; // ±0.2 radians (±11 degrees)
+          bot.head.rotation.x += (pitchTarget - bot.head.rotation.x) * Math.min(dt * 3, 1);
         }
         
-        // Smoothly interpolate to look around target
-        bot.head.rotation.y += (bot.lookAroundTarget - bot.head.rotation.y) * Math.min(dt * 2, 1);
+        // Smoothly interpolate to look around target (slower, more natural)
+        bot.head.rotation.y += (bot.lookAroundTarget - bot.head.rotation.y) * Math.min(dt * 2.5, 1);
       }
     }
   }
