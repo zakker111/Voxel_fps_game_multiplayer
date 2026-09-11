@@ -51,7 +51,7 @@ interface Bot {
   nameTag: THREE.Sprite;
   isCrouching: boolean;
   crouchTimer: number;
-  behaviorState: 'patrol' | 'engage' | 'strafe' | 'crouch' | 'peek' | 'capture' | 'retreat' | 'flank' | 'jumpdodge' | 'cover';
+  behaviorState: 'patrol' | 'engage' | 'strafe' | 'crouch' | 'peek' | 'capture' | 'retreat' | 'flank' | 'jumpdodge' | 'cover' | 'escort';
   behaviorTimer: number;
   strafeDirection: number;
   stuckTimer: number;
@@ -110,8 +110,8 @@ const RED_SPAWN_Z_MIN = 85;
 const RED_SPAWN_Z_MAX = 100;
 const SPAWN_X_RANGE = 40;
 
-const BLUE_FLAG_POS = { x: 0, z: -80 };
-const RED_FLAG_POS = { x: 0, z: 80 };
+const BLUE_FLAG_POS = { x: 0, z: -60 };
+const RED_FLAG_POS = { x: 0, z: 60 };
 
 export class Game {
   scene: THREE.Scene;
@@ -2183,6 +2183,11 @@ export class Game {
           bot.behaviorState = 'jumpdodge';
           bot.behaviorTimer = 0.5;
         }
+        // ESCORT FLAG CARRIER - High priority
+        else if (this.shouldEscortFlagCarrier(bot)) {
+          bot.behaviorState = 'escort';
+          bot.behaviorTimer = 2 + Math.random() * 2;
+        }
         // COMBAT BEHAVIORS - MORE DEFENSIVE
         else if (enemyTarget && distToEnemy < 20) {
           const roll = Math.random();
@@ -2409,6 +2414,37 @@ export class Game {
           if (enemyTarget) {
             const toEnemy = enemyTarget.pos.clone().sub(bot.position);
             bot.targetYaw = Math.atan2(-toEnemy.x, -toEnemy.z);
+          }
+          break;
+
+        case 'escort':
+          bot.isCrouching = false;
+          // Find flag carrier position
+          const flagCarrierPos = this.getFlagCarrierPosition(bot.team);
+          if (flagCarrierPos) {
+            // Move to position near flag carrier (3-5 units away)
+            const toCarrier = flagCarrierPos.clone().sub(bot.position);
+            const distToCarrier = toCarrier.length();
+            
+            if (distToCarrier > 5) {
+              // Move toward flag carrier
+              toCarrier.normalize();
+              bot.targetPos.set(
+                flagCarrierPos.x - toCarrier.x * 4,
+                bot.position.y,
+                flagCarrierPos.z - toCarrier.z * 4
+              );
+            } else {
+              // Stay near flag carrier and face enemies
+              bot.targetPos.copy(bot.position);
+              if (enemyTarget) {
+                const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+                bot.targetYaw = Math.atan2(-toEnemy.x, -toEnemy.z);
+              }
+            }
+          } else {
+            // No flag carrier, switch to capture
+            bot.behaviorState = 'capture';
           }
           break;
       }
@@ -2783,6 +2819,41 @@ export class Game {
       this.buildPreviewMesh.visible = false;
       this.player.targetInfo = '';
     }
+  }
+
+  private shouldEscortFlagCarrier(bot: Bot): boolean {
+    // Don't escort if this bot is carrying the flag
+    if (bot.carryingFlag) return false;
+    
+    // Check if player is carrying the flag and is on the same team
+    if (this.player.carryingFlag && this.player.team === bot.team) {
+      return true;
+    }
+    
+    // Check if any bot is carrying the flag and is on the same team
+    for (const otherBot of this.bots) {
+      if (otherBot.team === bot.team && otherBot.carryingFlag && otherBot !== bot) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  private getFlagCarrierPosition(team: 'red' | 'blue'): THREE.Vector3 | null {
+    // Check if player is carrying the flag
+    if (this.player.carryingFlag && this.player.team === team) {
+      return this.player.position.clone();
+    }
+    
+    // Check if any bot is carrying the flag
+    for (const bot of this.bots) {
+      if (bot.team === team && bot.carryingFlag) {
+        return bot.position.clone();
+      }
+    }
+    
+    return null;
   }
 
   private checkFlagCaptures(): void {
