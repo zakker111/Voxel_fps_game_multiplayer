@@ -80,6 +80,10 @@ interface Bot {
   // CTF flag system
   carryingFlag: boolean; // Is bot carrying enemy flag
   flagMesh: THREE.Group | null; // Visual flag mesh when carrying
+  
+  // Human-like behavior
+  lookAroundTimer: number; // Timer for looking around when idle
+  lookAroundTarget: number; // Target head rotation for looking around
 }
 
 interface Weapon {
@@ -421,7 +425,7 @@ export class Game {
       mesh: flagMesh,
       position: position.clone(),
       team: team,
-      respawnTimer: 30 // 30 seconds to respawn at base
+      respawnTimer: 60 // 60 seconds (1 minute) to respawn at base
     });
   }
 
@@ -1347,9 +1351,9 @@ export class Game {
       const pos = this.getSafeSpawnPos(team);
       const { group, leftLeg, rightLeg, leftArm, rightArm, head } = this.createBotMesh(team);
       group.position.copy(pos);
-      // Set initial facing direction based on team
+      // Bot model is already rotated to face +Z by default
       // Blue team faces toward red team (positive Z), Red team faces toward blue team (negative Z)
-      const initialYaw = team === 'blue' ? Math.PI : 0;
+      const initialYaw = team === 'blue' ? 0 : Math.PI;
       group.rotation.y = initialYaw;
       this.scene.add(group);
 
@@ -1360,7 +1364,10 @@ export class Game {
       // Randomly assign weapon (rifle or SMG)
       const botWeapon = Math.random() > 0.5 ? 'rifle' : 'smg';
       const weaponMesh = this.createBotWeaponMesh(botWeapon);
-      weaponMesh.position.set(0.3, 1.0, -0.2);
+      // Position weapon in bot's hands (right hand, chest level)
+      weaponMesh.position.set(0.25, 1.1, -0.3);
+      // Slight tilt to look like holding weapon
+      weaponMesh.rotation.x = -0.1;
       group.add(weaponMesh);
 
       this.bots.push({
@@ -1388,8 +1395,8 @@ export class Game {
         head,
         walkCycle: Math.random() * Math.PI * 2,
         isMoving: false,
-        targetYaw: team === 'blue' ? Math.PI : 0,
-        currentYaw: team === 'blue' ? Math.PI : 0,
+        targetYaw: team === 'blue' ? 0 : Math.PI,
+        currentYaw: team === 'blue' ? 0 : Math.PI,
         behaviorTimer: 3 + Math.random() * 4,
         strafeDirection: Math.random() > 0.5 ? 1 : -1,
         stuckTimer: 0,
@@ -1408,6 +1415,9 @@ export class Game {
         // CTF flag system
         carryingFlag: false,
         flagMesh: null,
+        // Human-like behavior
+        lookAroundTimer: 0,
+        lookAroundTarget: 0,
       });
     }
   }
@@ -1455,6 +1465,10 @@ export class Game {
     const rightArm = new THREE.Mesh(armGeo, armMat);
     rightArm.position.set(0.4, 1.1, 0);
     group.add(rightArm);
+
+    // Rotate the entire group to face +Z (forward direction)
+    // This fixes the backwards movement issue
+    group.rotation.y = Math.PI;
 
     return { group, leftLeg, rightLeg, leftArm, rightArm, head };
   }
@@ -2424,8 +2438,8 @@ export class Game {
       
       // Weapon aiming animation - FIXED: Smooth interpolation
       if (bot.weaponMesh) {
-        const hipPosition = new THREE.Vector3(0.3, 1.0, -0.2);
-        const aimPosition = new THREE.Vector3(0.1, 1.1, -0.35);
+        const hipPosition = new THREE.Vector3(0.25, 1.1, -0.3);
+        const aimPosition = new THREE.Vector3(0.15, 1.2, -0.4);
         
         // Store target position
         const targetPosition = new THREE.Vector3();
@@ -2434,8 +2448,10 @@ export class Game {
         // Smoothly interpolate current position towards target
         bot.weaponMesh.position.lerp(targetPosition, Math.min(dt * 10, 1));
         
-        // Smooth rotation towards target
-        const targetRotationX = bot.aimTransition * 0.1;
+        // Smooth rotation towards target (tilt up when aiming)
+        const baseTilt = -0.1; // Base tilt for holding weapon
+        const aimTilt = -0.2; // More tilt when aiming
+        const targetRotationX = baseTilt + (aimTilt - baseTilt) * bot.aimTransition;
         bot.weaponMesh.rotation.x += (targetRotationX - bot.weaponMesh.rotation.x) * Math.min(dt * 10, 1);
       }
       
@@ -2471,12 +2487,25 @@ export class Game {
         
         // Smoothly interpolate head rotation
         bot.head.rotation.y = bot.head.rotation.y + (clampedHeadYaw - bot.head.rotation.y) * Math.min(dt * 10, 1);
+        
+        // Reset look around timer when in combat
+        bot.lookAroundTimer = 0;
       } else if (bot.isMoving) {
         // When moving, head faces forward (relative to body)
         bot.head.rotation.y *= 0.9; // Smoothly return to center
+        bot.lookAroundTimer = 0;
       } else {
-        // When stationary and not shooting, slowly return to center
-        bot.head.rotation.y *= 0.95;
+        // When stationary and not shooting, look around human-like
+        bot.lookAroundTimer -= dt;
+        
+        if (bot.lookAroundTimer <= 0) {
+          // Set new look around target (random direction)
+          bot.lookAroundTarget = (Math.random() - 0.5) * 1.5; // ±0.75 radians (±43 degrees)
+          bot.lookAroundTimer = 2 + Math.random() * 3; // Look around every 2-5 seconds
+        }
+        
+        // Smoothly interpolate to look around target
+        bot.head.rotation.y += (bot.lookAroundTarget - bot.head.rotation.y) * Math.min(dt * 2, 1);
       }
     }
   }
