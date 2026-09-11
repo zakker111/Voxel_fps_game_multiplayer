@@ -2327,7 +2327,7 @@ export class Game {
           bot.targetPos.copy(bot.position);
           if (enemyTarget) {
             const toEnemy = enemyTarget.pos.clone().sub(bot.position);
-            bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
+            bot.targetYaw = Math.atan2(-toEnemy.x, -toEnemy.z);
           }
           break;
       }
@@ -2386,16 +2386,17 @@ export class Game {
         bot.isMoving = movedX || movedZ;
 
         // Set target yaw - prioritize movement direction when moving, face enemy when stationary
+        // Note: In Three.js, forward is -Z, so we use atan2(-x, -z) to get correct angle
         if (bot.carryingFlag) {
           // When carrying flag, ALWAYS face movement direction (toward own base)
-          bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
+          bot.targetYaw = Math.atan2(-toTarget.x, -toTarget.z);
         } else if (bot.isMoving) {
           // When moving, face movement direction
-          bot.targetYaw = Math.atan2(toTarget.x, toTarget.z);
+          bot.targetYaw = Math.atan2(-toTarget.x, -toTarget.z);
         } else if (enemyTarget && distToEnemy < 50) {
           // When stationary and in combat, face the enemy
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
-          bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
+          bot.targetYaw = Math.atan2(-toEnemy.x, -toEnemy.z);
         }
       } else {
         bot.isMoving = false;
@@ -2403,7 +2404,7 @@ export class Game {
         // When not moving, ALWAYS face enemy if in combat range
         if (enemyTarget && distToEnemy < 50) {
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
-          bot.targetYaw = Math.atan2(toEnemy.x, toEnemy.z);
+          bot.targetYaw = Math.atan2(-toEnemy.x, -toEnemy.z);
         }
       }
 
@@ -2580,7 +2581,7 @@ export class Game {
       if (enemyTarget && distToEnemy < 45 && bot.shootTimer <= 0.5) {
         // Calculate angle to enemy relative to bot's current body rotation
         const toEnemy = enemyTarget.pos.clone().sub(bot.position);
-        const targetHeadYaw = Math.atan2(toEnemy.x, toEnemy.z);
+        const targetHeadYaw = Math.atan2(-toEnemy.x, -toEnemy.z);
         const headYaw = targetHeadYaw - bot.currentYaw;
         const normalizedHeadYaw = Math.atan2(Math.sin(headYaw), Math.cos(headYaw));
         
