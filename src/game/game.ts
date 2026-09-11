@@ -1054,27 +1054,38 @@ export class Game {
     });
     const mesh = new THREE.Mesh(geometry, material);
     
-    // Position at weapon ejection port (right side of weapon)
-    mesh.position.copy(origin);
-    
-    // Calculate ejection direction (perpendicular to shooting direction, to the right)
+    // Calculate ejection port position (right side of weapon, slightly behind muzzle)
+    // The ejection port is typically on the right side, about 0.2-0.3 units behind the muzzle
     const right = new THREE.Vector3(-direction.z, 0, direction.x).normalize();
+    const backward = direction.clone().multiplyScalar(-0.25); // 0.25 units behind muzzle
+    const rightOffset = right.clone().multiplyScalar(0.15); // 0.15 units to the right
+    const upOffset = new THREE.Vector3(0, 0.05, 0); // Slightly up
+    
+    // Position at ejection port
+    const ejectionPos = origin.clone()
+      .add(backward)
+      .add(rightOffset)
+      .add(upOffset);
+    
+    mesh.position.copy(ejectionPos);
+    
+    // Calculate ejection direction (perpendicular to shooting direction, to the right and up)
     const up = new THREE.Vector3(0, 1, 0);
     
-    // Eject upward and to the right
-    const ejectVelocity = right.multiplyScalar(2 + Math.random() * 1);
-    ejectVelocity.add(up.multiplyScalar(3 + Math.random() * 1));
+    // Eject upward and to the right with realistic velocity
+    const ejectVelocity = right.clone().multiplyScalar(2.5 + Math.random() * 1.5);
+    ejectVelocity.add(up.clone().multiplyScalar(3.5 + Math.random() * 1.5));
     
-    // Add some randomness
-    ejectVelocity.x += (Math.random() - 0.5) * 0.5;
-    ejectVelocity.y += (Math.random() - 0.5) * 0.5;
-    ejectVelocity.z += (Math.random() - 0.5) * 0.5;
+    // Add some randomness for natural variation
+    ejectVelocity.x += (Math.random() - 0.5) * 0.8;
+    ejectVelocity.y += (Math.random() - 0.5) * 0.8;
+    ejectVelocity.z += (Math.random() - 0.5) * 0.8;
     
-    // Random rotation speed
+    // Random rotation speed for tumbling effect
     const rotationSpeed = new THREE.Vector3(
-      (Math.random() - 0.5) * 10,
-      (Math.random() - 0.5) * 10,
-      (Math.random() - 0.5) * 10
+      (Math.random() - 0.5) * 12,
+      (Math.random() - 0.5) * 12,
+      (Math.random() - 0.5) * 12
     );
     
     this.scene.add(mesh);
@@ -2460,6 +2471,17 @@ export class Game {
             const direction = toBot.dot(playerRight) / distToPlayer;
             this.sounds.playDistantShot(bot.weapon, distToPlayer, direction);
           }
+          
+          // Eject bullet shell from bot's weapon
+          // Calculate bot's shooting direction (toward enemy)
+          const botShootDir = enemyTarget.pos.clone().sub(bot.position).normalize();
+          // Calculate muzzle position (at bot's weapon, slightly in front)
+          const botMuzzlePos = bot.position.clone();
+          botMuzzlePos.y += 1.15; // Weapon height
+          botMuzzlePos.add(botShootDir.clone().multiplyScalar(0.5)); // In front of bot
+          
+          // Eject shell from bot's weapon
+          this.ejectBulletShell(botMuzzlePos, botShootDir);
 
           // Base accuracy: 25% (up from 15%)
           let accuracy = 0.25;
@@ -3263,6 +3285,19 @@ export class Game {
             const weaponType = remotePlayer.state.equipment === 'rifle' ? 'rifle' : 'smg';
             this.sounds.playDistantShot(weaponType, distance, direction);
           }
+          
+          // Eject bullet shell from remote player's weapon
+          // Calculate remote player's shooting direction (forward based on rotation)
+          const remoteShootDir = new THREE.Vector3(0, 0, -1);
+          remoteShootDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), remotePlayer.mesh.rotation.y);
+          
+          // Calculate muzzle position (at remote player's weapon)
+          const remoteMuzzlePos = remotePlayer.mesh.position.clone();
+          remoteMuzzlePos.y += 1.15; // Weapon height
+          remoteMuzzlePos.add(remoteShootDir.clone().multiplyScalar(0.5)); // In front
+          
+          // Eject shell
+          this.ejectBulletShell(remoteMuzzlePos, remoteShootDir);
         }
       }
     }
