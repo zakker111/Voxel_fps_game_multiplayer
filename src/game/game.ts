@@ -784,6 +784,34 @@ export class Game {
     }
   }
 
+  private getWeaponMuzzlePosition(): THREE.Vector3 {
+    if (!this.currentWeaponModel) {
+      // Fallback to camera position if no weapon model
+      return this.player.camera.position.clone();
+    }
+    
+    // Get the weapon model's world position
+    const weaponWorldPos = new THREE.Vector3();
+    this.currentWeaponModel.getWorldPosition(weaponWorldPos);
+    
+    // Calculate muzzle offset based on weapon type
+    // Rifle barrel is at z=-0.65, SMG barrel is at z=-0.4 (relative to weapon)
+    const barrelOffsetZ = this.equipment === 'rifle' ? -0.65 : -0.4;
+    const barrelOffsetY = 0.01; // Barrel is slightly above weapon center
+    
+    // Get weapon's world rotation
+    const weaponWorldQuat = new THREE.Quaternion();
+    this.currentWeaponModel.getWorldQuaternion(weaponWorldQuat);
+    
+    // Create muzzle offset vector in local space
+    const muzzleOffsetLocal = new THREE.Vector3(0, barrelOffsetY, barrelOffsetZ);
+    
+    // Transform to world space
+    const muzzlePos = muzzleOffsetLocal.applyQuaternion(weaponWorldQuat).add(weaponWorldPos);
+    
+    return muzzlePos;
+  }
+
   private shoot(now: number): void {
     const weapon = this.weapons[this.equipment];
     
@@ -811,10 +839,9 @@ export class Game {
     if (this.equipment === 'rifle') this.sounds.rifleShot();
     else if (this.equipment === 'smg') this.sounds.smgShot();
 
-    // Calculate muzzle position (at weapon model, not camera)
+    // Get the actual muzzle position from the weapon model
     const dir = this.player.getAimDirection();
-    const muzzleOffset = this.isAiming ? 0.8 : 0.5;
-    const muzzlePos = this.player.camera.position.clone().add(dir.clone().multiplyScalar(muzzleOffset));
+    const muzzlePos = this.getWeaponMuzzlePosition();
     
     // Create visible muzzle flash
     this.createMuzzleFlash(muzzlePos, dir.clone());
