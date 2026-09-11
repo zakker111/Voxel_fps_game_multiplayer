@@ -182,6 +182,15 @@ export class Game {
   isReloadAnimating: boolean = false;
   reloadAnimationDuration: number = 1.5; // seconds
   
+  // Bullet shell ejection system
+  bulletShells: Array<{
+    mesh: THREE.Mesh;
+    velocity: THREE.Vector3;
+    rotationSpeed: THREE.Vector3;
+    life: number;
+    maxLife: number;
+  }> = [];
+  
   // CTF Flag System
   blueFlagMesh: THREE.Mesh | null = null; // Blue flag at base
   redFlagMesh: THREE.Mesh | null = null; // Red flag at base
@@ -811,6 +820,9 @@ export class Game {
     // Create bullet tracer
     this.createBulletTracer(muzzlePos, dir.clone());
     
+    // Eject bullet shell
+    this.ejectBulletShell(muzzlePos, dir.clone());
+    
     // Calculate accuracy based on movement state
     let spreadMultiplier = 1.0;
     
@@ -1028,6 +1040,89 @@ export class Game {
       hasWhizzed: false,
       hasImpacted: false
     });
+  }
+
+  private ejectBulletShell(origin: THREE.Vector3, direction: THREE.Vector3): void {
+    // Create a small cylinder for the bullet shell casing
+    const shellRadius = 0.015;
+    const shellLength = 0.04;
+    const geometry = new THREE.CylinderGeometry(shellRadius, shellRadius, shellLength, 8);
+    const material = new THREE.MeshStandardMaterial({ 
+      color: 0xDAA520, // Golden brass color
+      metalness: 0.8,
+      roughness: 0.2
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    
+    // Position at weapon ejection port (right side of weapon)
+    mesh.position.copy(origin);
+    
+    // Calculate ejection direction (perpendicular to shooting direction, to the right)
+    const right = new THREE.Vector3(-direction.z, 0, direction.x).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    
+    // Eject upward and to the right
+    const ejectVelocity = right.multiplyScalar(2 + Math.random() * 1);
+    ejectVelocity.add(up.multiplyScalar(3 + Math.random() * 1));
+    
+    // Add some randomness
+    ejectVelocity.x += (Math.random() - 0.5) * 0.5;
+    ejectVelocity.y += (Math.random() - 0.5) * 0.5;
+    ejectVelocity.z += (Math.random() - 0.5) * 0.5;
+    
+    // Random rotation speed
+    const rotationSpeed = new THREE.Vector3(
+      (Math.random() - 0.5) * 10,
+      (Math.random() - 0.5) * 10,
+      (Math.random() - 0.5) * 10
+    );
+    
+    this.scene.add(mesh);
+    
+    this.bulletShells.push({
+      mesh,
+      velocity: ejectVelocity,
+      rotationSpeed,
+      life: 0,
+      maxLife: 2.0 // 2 seconds lifetime
+    });
+  }
+
+  private updateBulletShells(dt: number): void {
+    const gravity = 15; // Gravity acceleration
+    
+    for (let i = this.bulletShells.length - 1; i >= 0; i--) {
+      const shell = this.bulletShells[i];
+      
+      // Update life
+      shell.life += dt;
+      
+      // Apply gravity
+      shell.velocity.y -= gravity * dt;
+      
+      // Update position
+      shell.mesh.position.add(shell.velocity.clone().multiplyScalar(dt));
+      
+      // Update rotation
+      shell.mesh.rotation.x += shell.rotationSpeed.x * dt;
+      shell.mesh.rotation.y += shell.rotationSpeed.y * dt;
+      shell.mesh.rotation.z += shell.rotationSpeed.z * dt;
+      
+      // Fade out in the last 0.5 seconds
+      if (shell.life > shell.maxLife - 0.5) {
+        const fadeProgress = (shell.life - (shell.maxLife - 0.5)) / 0.5;
+        (shell.mesh.material as THREE.MeshLambertMaterial).opacity = 1.0 - fadeProgress;
+        (shell.mesh.material as THREE.MeshLambertMaterial).transparent = true;
+      }
+      
+      // Remove if expired
+      if (shell.life >= shell.maxLife) {
+        this.scene.remove(shell.mesh);
+        shell.mesh.geometry.dispose();
+        (shell.mesh.material as THREE.Material).dispose();
+        this.bulletShells.splice(i, 1);
+      }
+    }
   }
 
   private updateBulletTracers(dt: number): void {
@@ -2727,25 +2822,59 @@ export class Game {
     // Update reload animation
     this.updateReload(dt);
     
-    // Animate weapon during reload
+    // Animate weapon during reload - improved animation
     if (this.isReloadAnimating && this.currentWeaponModel && (this.equipment === 'rifle' || this.equipment === 'smg')) {
       const reloadProgress = this.reloadAnimationTime / this.reloadAnimationDuration;
       
-      // Magazine drop and insert animation
-      if (reloadProgress < 0.4) {
-        // Magazine dropping out
-        const dropProgress = reloadProgress / 0.4;
-        this.currentWeaponModel.rotation.x = dropProgress * 0.3;
-        this.currentWeaponModel.position.y = this.hipPosition.y - dropProgress * 0.1;
-      } else if (reloadProgress < 0.6) {
-        // Pause (magazine out)
-        this.currentWeaponModel.rotation.x = 0.3;
-        this.currentWeaponModel.position.y = this.hipPosition.y - 0.1;
+      // Enhanced reload animation with more dramatic movement
+      if (reloadProgress < 0.15) {
+        // Phase 1: Tilt weapon down to expose magazine
+        const tiltProgress = reloadProgress / 0.15;
+        this.currentWeaponModel.rotation.x = tiltProgress * 0.4;
+        this.currentWeaponModel.rotation.z = tiltProgress * 0.15;
+        this.currentWeaponModel.position.y = this.hipPosition.y - tiltProgress * 0.15;
+        this.currentWeaponModel.position.x = this.hipPosition.x - tiltProgress * 0.05;
+      } else if (reloadProgress < 0.35) {
+        // Phase 2: Magazine dropping out
+        const dropProgress = (reloadProgress - 0.15) / 0.2;
+        this.currentWeaponModel.rotation.x = 0.4 + dropProgress * 0.2;
+        this.currentWeaponModel.rotation.z = 0.15;
+        this.currentWeaponModel.position.y = this.hipPosition.y - 0.15 - dropProgress * 0.1;
+        this.currentWeaponModel.position.x = this.hipPosition.x - 0.05;
+      } else if (reloadProgress < 0.5) {
+        // Phase 3: Pause (magazine out, hand moving to new mag)
+        const pauseProgress = (reloadProgress - 0.35) / 0.15;
+        this.currentWeaponModel.rotation.x = 0.6 - pauseProgress * 0.1;
+        this.currentWeaponModel.rotation.z = 0.15 - pauseProgress * 0.05;
+        this.currentWeaponModel.position.y = this.hipPosition.y - 0.25;
+        this.currentWeaponModel.position.x = this.hipPosition.x - 0.05;
+      } else if (reloadProgress < 0.7) {
+        // Phase 4: Magazine inserting
+        const insertProgress = (reloadProgress - 0.5) / 0.2;
+        this.currentWeaponModel.rotation.x = 0.5 - insertProgress * 0.3;
+        this.currentWeaponModel.rotation.z = 0.1 - insertProgress * 0.05;
+        this.currentWeaponModel.position.y = this.hipPosition.y - 0.25 + insertProgress * 0.1;
+        this.currentWeaponModel.position.x = this.hipPosition.x - 0.05 + insertProgress * 0.02;
+      } else if (reloadProgress < 0.85) {
+        // Phase 5: Slam magazine home
+        const slamProgress = (reloadProgress - 0.7) / 0.15;
+        this.currentWeaponModel.rotation.x = 0.2 - slamProgress * 0.15;
+        this.currentWeaponModel.rotation.z = 0.05 - slamProgress * 0.03;
+        this.currentWeaponModel.position.y = this.hipPosition.y - 0.15 + slamProgress * 0.1;
+        this.currentWeaponModel.position.x = this.hipPosition.x - 0.03 + slamProgress * 0.02;
+        
+        // Add a small bump when magazine locks in
+        if (slamProgress > 0.8) {
+          const bumpProgress = (slamProgress - 0.8) / 0.2;
+          this.currentWeaponModel.position.y += Math.sin(bumpProgress * Math.PI) * 0.02;
+        }
       } else {
-        // Magazine inserting
-        const insertProgress = (reloadProgress - 0.6) / 0.4;
-        this.currentWeaponModel.rotation.x = 0.3 * (1 - insertProgress);
-        this.currentWeaponModel.position.y = this.hipPosition.y - 0.1 * (1 - insertProgress);
+        // Phase 6: Return to ready position
+        const returnProgress = (reloadProgress - 0.85) / 0.15;
+        this.currentWeaponModel.rotation.x = 0.05 * (1 - returnProgress);
+        this.currentWeaponModel.rotation.z = 0.02 * (1 - returnProgress);
+        this.currentWeaponModel.position.y = this.hipPosition.y - 0.05 + returnProgress * 0.05;
+        this.currentWeaponModel.position.x = this.hipPosition.x - 0.01 + returnProgress * 0.01;
       }
     }
     
@@ -2775,6 +2904,9 @@ export class Game {
 
     // Update bullet tracers
     this.updateBulletTracers(dt);
+    
+    // Update bullet shells
+    this.updateBulletShells(dt);
     
     // Update collapse animations
     this.updateCollapseAnimations(dt);
@@ -3047,11 +3179,67 @@ export class Game {
       ) as THREE.Group | undefined;
       
       if (weaponMesh) {
-        // Animate weapon position based on aim transition
-        const hipPosition = new THREE.Vector3(0.3, 1.0, -0.2);
-        const aimPosition = new THREE.Vector3(0.1, 1.1, -0.35);
-        weaponMesh.position.lerpVectors(hipPosition, aimPosition, aimTransition);
-        weaponMesh.rotation.x = aimTransition * 0.1;
+        // Animate weapon position based on aim transition - improved animation
+        const hipPosition = new THREE.Vector3(0.3, 1.15, -0.4);
+        const aimPosition = new THREE.Vector3(0.1, 1.25, -0.5);
+        
+        // Store target position
+        const targetPosition = new THREE.Vector3();
+        targetPosition.lerpVectors(hipPosition, aimPosition, aimTransition);
+        
+        // Smoothly interpolate current position towards target
+        weaponMesh.position.lerp(targetPosition, Math.min(dt * 12, 1));
+        
+        // Smooth rotation towards target (more dramatic tilt when aiming)
+        const baseTilt = -0.15;
+        const aimTilt = -0.35;
+        const targetRotationX = baseTilt + (aimTilt - baseTilt) * aimTransition;
+        weaponMesh.rotation.x += (targetRotationX - weaponMesh.rotation.x) * Math.min(dt * 12, 1);
+        
+        // Add slight Y rotation when aiming
+        const baseYaw = 0.05;
+        const aimYaw = 0.0;
+        const targetRotationY = baseYaw + (aimYaw - baseYaw) * aimTransition;
+        weaponMesh.rotation.y += (targetRotationY - weaponMesh.rotation.y) * Math.min(dt * 12, 1);
+      }
+
+      // Head tracking for remote players - look around when idle
+      const head = remotePlayer.mesh.children.find(child => 
+        child instanceof THREE.Mesh && child.position.y > 1.7 && child.position.y < 1.9
+      ) as THREE.Mesh | undefined;
+      
+      if (head) {
+        // Initialize look around properties if not exists
+        if (!(remotePlayer as any).lookAroundTimer) {
+          (remotePlayer as any).lookAroundTimer = 0;
+          (remotePlayer as any).lookAroundTarget = 0;
+        }
+        
+        // When shooting, look forward
+        if (remotePlayer.state.isShooting) {
+          head.rotation.y *= 0.9; // Smoothly return to center
+          (remotePlayer as any).lookAroundTimer = 0;
+        } else if (isMoving) {
+          // When moving, head faces forward
+          head.rotation.y *= 0.92;
+          (remotePlayer as any).lookAroundTimer = 0;
+        } else {
+          // When stationary, look around human-like
+          (remotePlayer as any).lookAroundTimer -= dt;
+          
+          if ((remotePlayer as any).lookAroundTimer <= 0) {
+            // Set new look around target
+            (remotePlayer as any).lookAroundTarget = (Math.random() - 0.5) * 2.0;
+            (remotePlayer as any).lookAroundTimer = 1.5 + Math.random() * 2.5;
+            
+            // Also add pitch variation
+            const pitchTarget = (Math.random() - 0.5) * 0.4;
+            head.rotation.x += (pitchTarget - head.rotation.x) * Math.min(dt * 3, 1);
+          }
+          
+          // Smoothly interpolate to look around target
+          head.rotation.y += ((remotePlayer as any).lookAroundTarget - head.rotation.y) * Math.min(dt * 2.5, 1);
+        }
       }
 
       // Play shooting sound when remote player shoots
