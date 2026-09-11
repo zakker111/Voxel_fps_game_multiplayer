@@ -10,6 +10,7 @@ function App() {
     message: '', messageTimer: 0, buildMode: false, buildValid: true,
     blueKills: 0, redKills: 0, blueCaptures: 0, redCaptures: 0, isAiming: false,
     currentAmmo: 10, magazineSize: 10, isReloading: false,
+    playerCarryingFlag: false, flagCarrierName: '',
   });
   const [started, setStarted] = useState(false);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'singleplayer' | 'online' | null>(null);
@@ -168,34 +169,45 @@ function App() {
           {/* Scoreboard - only in multiplayer */}
           {(gameMode === 'multiplayer' || gameMode === 'online') && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
-              <div className="flex items-center bg-gray-900/90 rounded-xl overflow-hidden border-2 border-gray-700">
-                <div className="px-5 py-2 bg-blue-900/40 flex flex-col items-center gap-1">
-                  <span className="text-blue-300 font-bold text-sm">BLUE</span>
-                  <div className="flex items-center gap-3">
-                    <div className="flex flex-col items-center">
-                      <span className="text-gray-400 text-xs">Kills</span>
-                      <span className="text-white font-bold text-xl">{gameState.blueKills}</span>
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex items-center bg-gray-900/90 rounded-xl overflow-hidden border-2 border-gray-700">
+                  <div className="px-5 py-2 bg-blue-900/40 flex flex-col items-center gap-1">
+                    <span className="text-blue-300 font-bold text-sm">BLUE</span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex flex-col items-center">
+                        <span className="text-gray-400 text-xs">Kills</span>
+                        <span className="text-white font-bold text-xl">{gameState.blueKills}</span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-gray-400 text-xs">Flags</span>
+                        <span className="text-yellow-400 font-bold text-xl">{gameState.blueCaptures}</span>
+                      </div>
                     </div>
-                    <div className="flex flex-col items-center">
-                      <span className="text-gray-400 text-xs">Flags</span>
-                      <span className="text-yellow-400 font-bold text-xl">{gameState.blueCaptures}</span>
+                  </div>
+                  <div className="px-3 py-2 text-gray-500 font-bold">VS</div>
+                  <div className="px-5 py-2 bg-red-900/40 flex flex-col items-center gap-1">
+                    <span className="text-red-300 font-bold text-sm">RED</span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex flex-col items-center">
+                        <span className="text-gray-400 text-xs">Kills</span>
+                        <span className="text-white font-bold text-xl">{gameState.redKills}</span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-gray-400 text-xs">Flags</span>
+                        <span className="text-yellow-400 font-bold text-xl">{gameState.redCaptures}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="px-3 py-2 text-gray-500 font-bold">VS</div>
-                <div className="px-5 py-2 bg-red-900/40 flex flex-col items-center gap-1">
-                  <span className="text-red-300 font-bold text-sm">RED</span>
-                  <div className="flex items-center gap-3">
-                    <div className="flex flex-col items-center">
-                      <span className="text-gray-400 text-xs">Kills</span>
-                      <span className="text-white font-bold text-xl">{gameState.redKills}</span>
-                    </div>
-                    <div className="flex flex-col items-center">
-                      <span className="text-gray-400 text-xs">Flags</span>
-                      <span className="text-yellow-400 font-bold text-xl">{gameState.redCaptures}</span>
-                    </div>
+                
+                {/* Flag carrier indicator */}
+                {gameState.flagCarrierName && (
+                  <div className="bg-yellow-900/90 px-4 py-2 rounded-lg border-2 border-yellow-500 animate-pulse">
+                    <span className="text-yellow-300 font-bold text-sm">
+                      🚩 Flag Carrier: {gameState.flagCarrierName}
+                    </span>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}

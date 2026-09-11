@@ -30,6 +30,8 @@ export interface GameState {
   currentAmmo: number;
   magazineSize: number;
   isReloading: boolean;
+  playerCarryingFlag: boolean;
+  flagCarrierName: string;
 }
 
 interface Bot {
@@ -77,7 +79,7 @@ interface Bot {
   aimTransition: number; // 0-1 for smooth aiming transition
   // CTF flag system
   carryingFlag: boolean; // Is bot carrying enemy flag
-  flagMesh: THREE.Mesh | null; // Visual flag mesh when carrying
+  flagMesh: THREE.Group | null; // Visual flag mesh when carrying
 }
 
 interface Weapon {
@@ -345,6 +347,33 @@ export class Game {
     this.scene.add(this.redFlagMesh);
   }
 
+  // Create a carried flag mesh that follows the carrier
+  private createCarriedFlagMesh(team: Team): THREE.Group {
+    const flagGroup = new THREE.Group();
+    
+    // Flag pole
+    const poleGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.5, 8);
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.y = 0.75;
+    flagGroup.add(pole);
+    
+    // Flag cloth (triangle shape)
+    const flagColor = team === 'blue' ? 0x4488ff : 0xff4444;
+    const flagGeo = new THREE.PlaneGeometry(0.6, 0.4);
+    const flagMat = new THREE.MeshLambertMaterial({ 
+      color: flagColor, 
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9
+    });
+    const flag = new THREE.Mesh(flagGeo, flagMat);
+    flag.position.set(0.3, 1.3, 0);
+    flagGroup.add(flag);
+    
+    return flagGroup;
+  }
+
   private createCaptureZones(): void {
     // Create blue capture zone (4x4 area)
     const blueZoneGeo = new THREE.PlaneGeometry(this.captureZoneSize, this.captureZoneSize);
@@ -413,6 +442,11 @@ export class Game {
         
         if (distToFlag < 2) {
           this.player.carryingFlag = true;
+          // Create and attach flag mesh to player
+          this.player.flagMesh = this.createCarriedFlagMesh(enemyFlagTeam);
+          this.player.flagMesh.position.set(0.5, 1.5, 0); // Position on player's back
+          this.scene.add(this.player.flagMesh);
+          
           if (enemyFlagTeam === 'blue') {
             this.blueFlagAtBase = false;
             if (this.blueFlagMesh) this.blueFlagMesh.visible = false;
@@ -431,7 +465,15 @@ export class Game {
           const distToFlag = this.player.position.distanceTo(droppedFlag.position);
           if (distToFlag < 2) {
             this.player.carryingFlag = true;
+            // Create and attach flag mesh to player
+            this.player.flagMesh = this.createCarriedFlagMesh(enemyFlagTeam);
+            this.player.flagMesh.position.set(0.5, 1.5, 0);
+            this.scene.add(this.player.flagMesh);
+            
+            // Remove dropped flag
             this.scene.remove(droppedFlag.mesh);
+            droppedFlag.mesh.geometry.dispose();
+            (droppedFlag.mesh.material as THREE.Material).dispose();
             this.droppedFlags.splice(i, 1);
             this.showMessage(`🚩 ${this.playerTeam.toUpperCase()} picked up the dropped flag!`);
           }
@@ -442,6 +484,12 @@ export class Game {
     // Check if player captured the flag (brought enemy flag to own base)
     if (this.player.carryingFlag && this.isInCaptureZone(this.player.position, this.playerTeam)) {
       this.player.carryingFlag = false;
+      // Remove flag mesh from player
+      if (this.player.flagMesh) {
+        this.scene.remove(this.player.flagMesh);
+        this.player.flagMesh = null;
+      }
+      
       if (this.playerTeam === 'blue') {
         this.blueCaptures++;
         this.redFlagAtBase = true;
@@ -458,6 +506,7 @@ export class Game {
         }
       }
       this.showMessage(`🏆 ${this.playerTeam.toUpperCase()} CAPTURED THE FLAG!`);
+      this.sounds.capture();
     }
   }
 
@@ -466,12 +515,16 @@ export class Game {
       const droppedFlag = this.droppedFlags[i];
       droppedFlag.respawnTimer -= dt;
       
-      // Rotate flag for visual effect
+      // Rotate and bob flag for visual effect
       droppedFlag.mesh.rotation.y += dt * 2;
+      const baseY = this.world.getGroundHeight(droppedFlag.position.x, droppedFlag.position.z) + 1;
+      droppedFlag.mesh.position.y = baseY + Math.sin(Date.now() * 0.003) * 0.2;
       
       if (droppedFlag.respawnTimer <= 0) {
         // Return flag to base
         this.scene.remove(droppedFlag.mesh);
+        droppedFlag.mesh.geometry.dispose();
+        (droppedFlag.mesh.material as THREE.Material).dispose();
         this.droppedFlags.splice(i, 1);
         
         if (droppedFlag.team === 'blue') {
@@ -488,6 +541,7 @@ export class Game {
           }
         }
         this.showMessage(`🚩 ${droppedFlag.team.toUpperCase()} flag returned to base!`);
+        this.sounds.capture();
       }
     }
   }
@@ -496,6 +550,14 @@ export class Game {
     if (this.player.carryingFlag) {
       this.player.carryingFlag = false;
       const enemyFlagTeam = this.playerTeam === 'blue' ? 'red' : 'blue';
+      
+      // Remove flag mesh from player
+      if (this.player.flagMesh) {
+        this.scene.remove(this.player.flagMesh);
+        this.player.flagMesh = null;
+      }
+      
+      // Create dropped flag at player's death location
       this.createDroppedFlag(this.player.position.clone(), enemyFlagTeam);
       this.showMessage(`💀 ${this.playerTeam.toUpperCase()} dropped the flag!`);
     }
@@ -515,6 +577,11 @@ export class Game {
 
       if (distToFlag < 2) {
         bot.carryingFlag = true;
+        // Create and attach flag mesh to bot
+        bot.flagMesh = this.createCarriedFlagMesh(enemyFlagTeam);
+        bot.flagMesh.position.set(0.5, 1.5, 0); // Position on bot's back
+        bot.mesh.add(bot.flagMesh); // Attach to bot mesh
+        
         if (enemyFlagTeam === 'blue') {
           this.blueFlagAtBase = false;
           if (this.blueFlagMesh) this.blueFlagMesh.visible = false;
@@ -534,7 +601,15 @@ export class Game {
           const distToFlag = bot.position.distanceTo(droppedFlag.position);
           if (distToFlag < 2) {
             bot.carryingFlag = true;
+            // Create and attach flag mesh to bot
+            bot.flagMesh = this.createCarriedFlagMesh(enemyFlagTeam);
+            bot.flagMesh.position.set(0.5, 1.5, 0);
+            bot.mesh.add(bot.flagMesh);
+            
+            // Remove dropped flag
             this.scene.remove(droppedFlag.mesh);
+            droppedFlag.mesh.geometry.dispose();
+            (droppedFlag.mesh.material as THREE.Material).dispose();
             this.droppedFlags.splice(i, 1);
             this.showMessage(`🚩 ${bot.team.toUpperCase()} bot picked up the dropped flag!`);
           }
@@ -553,6 +628,12 @@ export class Game {
       // Check if bot captured the flag
       if (this.isInCaptureZone(bot.position, bot.team)) {
         bot.carryingFlag = false;
+        // Remove flag mesh from bot
+        if (bot.flagMesh) {
+          bot.mesh.remove(bot.flagMesh);
+          bot.flagMesh = null;
+        }
+        
         if (bot.team === 'blue') {
           this.blueCaptures++;
           this.redFlagAtBase = true;
@@ -569,6 +650,7 @@ export class Game {
           }
         }
         this.showMessage(`🏆 ${bot.team.toUpperCase()} bot CAPTURED THE FLAG!`);
+        this.sounds.capture();
       } else {
         // Move toward own base
         bot.targetPos.set(ownFlagPos.x, bot.position.y, ownFlagPos.z);
@@ -581,6 +663,14 @@ export class Game {
     if (bot.carryingFlag) {
       bot.carryingFlag = false;
       const enemyFlagTeam = bot.team === 'blue' ? 'red' : 'blue';
+      
+      // Remove flag mesh from bot
+      if (bot.flagMesh) {
+        bot.mesh.remove(bot.flagMesh);
+        bot.flagMesh = null;
+      }
+      
+      // Create dropped flag at bot's death location
       this.createDroppedFlag(bot.position.clone(), enemyFlagTeam);
       this.showMessage(`💀 ${bot.team.toUpperCase()} bot dropped the flag!`);
     }
@@ -2523,6 +2613,20 @@ export class Game {
     if (wasDead && !this.player.isDead) {
       this.sounds.respawn();
     }
+    
+    // Update player's carried flag position
+    if (this.player.carryingFlag && this.player.flagMesh) {
+      this.player.flagMesh.position.set(
+        this.player.position.x + 0.5,
+        this.player.position.y + 1.5,
+        this.player.position.z
+      );
+      // Rotate flag to face movement direction
+      if (this.player.velocity.length() > 0.1) {
+        const angle = Math.atan2(this.player.velocity.x, this.player.velocity.z);
+        this.player.flagMesh.rotation.y = angle;
+      }
+    }
 
     // CTF Flag System Updates
     this.checkFlagPickup();
@@ -2663,6 +2767,20 @@ export class Game {
   private emitState(): void {
     if (this.onStateChange) {
       const weapon = this.weapons[this.equipment];
+      
+      // Find flag carrier name
+      let flagCarrierName = '';
+      if (this.player.carryingFlag) {
+        flagCarrierName = 'You';
+      } else {
+        for (const bot of this.bots) {
+          if (bot.carryingFlag) {
+            flagCarrierName = `${bot.team.toUpperCase()} Bot`;
+            break;
+          }
+        }
+      }
+      
       this.onStateChange({
         hp: this.player.hp,
         maxHp: this.player.maxHp,
@@ -2684,6 +2802,8 @@ export class Game {
         currentAmmo: weapon?.currentAmmo || 0,
         magazineSize: weapon?.magazineSize || 0,
         isReloading: weapon?.isReloading || false,
+        playerCarryingFlag: this.player.carryingFlag,
+        flagCarrierName: flagCarrierName,
       });
     }
   }

@@ -28,7 +28,7 @@ export class Player {
   
   // CTF flag system
   carryingFlag: boolean = false;
-  flagMesh: THREE.Mesh | null = null;
+  flagMesh: THREE.Group | null = null;
 
   // Smooth gameplay features
   headBobTime: number = 0;
