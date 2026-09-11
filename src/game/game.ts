@@ -191,6 +191,14 @@ export class Game {
     maxLife: number;
   }> = [];
   
+  // Muzzle flash system (visible to all players)
+  muzzleFlashes: Array<{
+    light: THREE.PointLight;
+    mesh: THREE.Mesh;
+    life: number;
+    maxLife: number;
+  }> = [];
+  
   // CTF Flag System
   blueFlagMesh: THREE.Mesh | null = null; // Blue flag at base
   redFlagMesh: THREE.Mesh | null = null; // Red flag at base
@@ -808,7 +816,10 @@ export class Game {
     const muzzleOffset = this.isAiming ? 0.8 : 0.5;
     const muzzlePos = this.player.camera.position.clone().add(dir.clone().multiplyScalar(muzzleOffset));
     
-    // Position muzzle flash at weapon muzzle
+    // Create visible muzzle flash
+    this.createMuzzleFlash(muzzlePos, dir.clone());
+    
+    // Also update the local muzzle flash light for camera effect
     this.muzzleFlash.intensity = 3;
     this.muzzleFlash.position.copy(muzzlePos);
     this.muzzleTimer = 0.05;
@@ -1040,6 +1051,65 @@ export class Game {
       hasWhizzed: false,
       hasImpacted: false
     });
+  }
+
+  private createMuzzleFlash(position: THREE.Vector3, direction: THREE.Vector3): void {
+    // Create a bright point light for the flash
+    const light = new THREE.PointLight(0xffaa00, 5, 8);
+    light.position.copy(position);
+    this.scene.add(light);
+    
+    // Create a visible flash mesh (sphere) for better visibility
+    const flashGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+    const flashMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffcc00,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const flashMesh = new THREE.Mesh(flashGeometry, flashMaterial);
+    flashMesh.position.copy(position);
+    
+    // Add a directional stretch to make it look like a flash
+    flashMesh.scale.set(1, 1, 2);
+    flashMesh.lookAt(position.clone().add(direction));
+    
+    this.scene.add(flashMesh);
+    
+    this.muzzleFlashes.push({
+      light,
+      mesh: flashMesh,
+      life: 0,
+      maxLife: 0.08, // Very short flash duration
+    });
+  }
+  
+  private updateMuzzleFlashes(dt: number): void {
+    for (let i = this.muzzleFlashes.length - 1; i >= 0; i--) {
+      const flash = this.muzzleFlashes[i];
+      
+      // Update life
+      flash.life += dt;
+      
+      // Fade out
+      const progress = flash.life / flash.maxLife;
+      const fadeOut = 1 - progress;
+      
+      flash.light.intensity = 5 * fadeOut;
+      (flash.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * fadeOut;
+      
+      // Scale down as it fades
+      const scale = 1 + progress * 0.5;
+      flash.mesh.scale.set(scale, scale, scale * 2);
+      
+      // Remove if expired
+      if (flash.life >= flash.maxLife) {
+        this.scene.remove(flash.light);
+        this.scene.remove(flash.mesh);
+        flash.mesh.geometry.dispose();
+        (flash.mesh.material as THREE.Material).dispose();
+        this.muzzleFlashes.splice(i, 1);
+      }
+    }
   }
 
   private ejectBulletShell(origin: THREE.Vector3, direction: THREE.Vector3): void {
@@ -2482,6 +2552,9 @@ export class Game {
           
           // Eject shell from bot's weapon
           this.ejectBulletShell(botMuzzlePos, botShootDir);
+          
+          // Create muzzle flash for bot
+          this.createMuzzleFlash(botMuzzlePos, botShootDir);
 
           // Base accuracy: 25% (up from 15%)
           let accuracy = 0.25;
@@ -2931,6 +3004,9 @@ export class Game {
     // Update bullet shells
     this.updateBulletShells(dt);
     
+    // Update muzzle flashes
+    this.updateMuzzleFlashes(dt);
+    
     // Update collapse animations
     this.updateCollapseAnimations(dt);
 
@@ -3298,6 +3374,9 @@ export class Game {
           
           // Eject shell
           this.ejectBulletShell(remoteMuzzlePos, remoteShootDir);
+          
+          // Create muzzle flash for remote player
+          this.createMuzzleFlash(remoteMuzzlePos, remoteShootDir);
         }
       }
     }
@@ -3383,6 +3462,23 @@ export class Game {
       (tracer.mesh.material as THREE.Material).dispose();
     }
     this.bulletTracers = [];
+    
+    // Clean up bullet shells
+    for (const shell of this.bulletShells) {
+      this.scene.remove(shell.mesh);
+      shell.mesh.geometry.dispose();
+      (shell.mesh.material as THREE.Material).dispose();
+    }
+    this.bulletShells = [];
+    
+    // Clean up muzzle flashes
+    for (const flash of this.muzzleFlashes) {
+      this.scene.remove(flash.light);
+      this.scene.remove(flash.mesh);
+      flash.mesh.geometry.dispose();
+      (flash.mesh.material as THREE.Material).dispose();
+    }
+    this.muzzleFlashes = [];
     
     // Clean up collapse animations
     for (const anim of this.collapseAnimations) {
