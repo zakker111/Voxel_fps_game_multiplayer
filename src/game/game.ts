@@ -699,6 +699,7 @@ export class Game {
     
     this.createMuzzleFlash(muzzlePos, dir.clone());
     this.createBulletTracer(muzzlePos, dir.clone());
+    this.createBulletShell(muzzlePos, dir.clone());
     
     // Play appropriate sound based on weapon
     if (this.equipment === 'rifle') {
@@ -830,6 +831,29 @@ export class Game {
     this.bulletTracers.push({ mesh, velocity, life: 0, maxLife: 0.5, hasWhizzed: false, hasImpacted: false });
   }
 
+  private createBulletShell(origin: THREE.Vector3, direction: THREE.Vector3): void {
+    const shellGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.03, 8);
+    const shellMat = new THREE.MeshStandardMaterial({ color: 0xDAA520, metalness: 0.8, roughness: 0.2 });
+    const mesh = new THREE.Mesh(shellGeo, shellMat);
+    mesh.position.copy(origin);
+    
+    // Rotate shell to be horizontal
+    mesh.rotation.z = Math.PI / 2;
+    
+    this.scene.add(mesh);
+
+    // Eject shell to the right and slightly up
+    const right = new THREE.Vector3(-direction.z, 0, direction.x).normalize();
+    const velocity = right.multiplyScalar(3).add(new THREE.Vector3(0, 2, 0));
+    const rotationSpeed = new THREE.Vector3(
+      (Math.random() - 0.5) * 10,
+      (Math.random() - 0.5) * 10,
+      (Math.random() - 0.5) * 10
+    );
+
+    this.bulletShells.push({ mesh, velocity, rotationSpeed, life: 0, maxLife: 2 });
+  }
+
   private showMessage(msg: string): void {
     this.message = msg;
     this.messageTimer = 2;
@@ -878,6 +902,28 @@ export class Game {
       if (tracer.life >= tracer.maxLife) {
         this.scene.remove(tracer.mesh);
         this.bulletTracers.splice(i, 1);
+      }
+    }
+
+    // Update bullet shells
+    for (let i = this.bulletShells.length - 1; i >= 0; i--) {
+      const shell = this.bulletShells[i];
+      shell.velocity.y -= 9.8 * dt; // Gravity
+      shell.mesh.position.add(shell.velocity.clone().multiplyScalar(dt));
+      shell.mesh.rotation.x += shell.rotationSpeed.x * dt;
+      shell.mesh.rotation.y += shell.rotationSpeed.y * dt;
+      shell.mesh.rotation.z += shell.rotationSpeed.z * dt;
+      shell.life += dt;
+      
+      // Fade out in last 0.5 seconds
+      if (shell.life > shell.maxLife - 0.5) {
+        const opacity = (shell.maxLife - shell.life) / 0.5;
+        (shell.mesh.material as THREE.MeshStandardMaterial).opacity = opacity;
+      }
+      
+      if (shell.life >= shell.maxLife) {
+        this.scene.remove(shell.mesh);
+        this.bulletShells.splice(i, 1);
       }
     }
 
