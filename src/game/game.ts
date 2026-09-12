@@ -305,11 +305,6 @@ export class Game {
       this.initializeNetwork();
     }
     
-    console.log('Game constructor completed successfully');
-  }
-  }
-  }
-
     this.boundResize = this.onResize.bind(this);
     this.boundMouseDown = this.onMouseDown.bind(this);
     this.boundMouseUp = this.onMouseUp.bind(this);
