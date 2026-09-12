@@ -104,11 +104,11 @@ const TEAM_COLORS: Record<Team, { body: number; accent: number; legs: number; la
   blue: { body: 0x2244cc, accent: 0x4488ff, legs: 0x112266, label: 'BLUE' },
 };
 
-const BLUE_SPAWN_Z_MIN = -70;
-const BLUE_SPAWN_Z_MAX = -60;
-const RED_SPAWN_Z_MIN = 60;
-const RED_SPAWN_Z_MAX = 70;
-const SPAWN_X_RANGE = 10;
+const BLUE_SPAWN_Z_MIN = -100;
+const BLUE_SPAWN_Z_MAX = -90;
+const RED_SPAWN_Z_MIN = 90;
+const RED_SPAWN_Z_MAX = 100;
+const SPAWN_X_RANGE = 20; // Increased from 10 to 20 to spread spawns further apart
 
 const BLUE_FLAG_POS = { x: 0, z: -80 };
 const RED_FLAG_POS = { x: 0, z: 80 };
@@ -977,7 +977,7 @@ export class Game {
 
       if (closestBot.hp <= 0) {
         closestBot.isDead = true;
-        closestBot.respawnTimer = 8;
+        closestBot.respawnTimer = 12; // Increased from 8 to 12 seconds
         
         // Start death animation instead of hiding immediately
         this.deathAnimations.set(closestBot.mesh.uuid, {
@@ -2985,7 +2985,7 @@ export class Game {
         
         // Respawn bot at their base
         bot.isDead = true;
-        bot.respawnTimer = 5;
+        bot.respawnTimer = 10; // Increased from 5 to 10 seconds
         this.sounds.capture();
       }
     }

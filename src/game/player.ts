@@ -118,7 +118,7 @@ export class Player {
 
   die(): void {
     this.isDead = true;
-    this.respawnTimer = 6;
+    this.respawnTimer = 10; // Increased from 6 to 10 seconds
   }
 
   respawn(team: 'red' | 'blue' = 'blue'): void {
@@ -128,12 +128,12 @@ export class Player {
     // Spawn in team spawn zone
     let spawnZ: number;
     if (team === 'blue') {
-      spawnZ = -100 + Math.random() * 15; // BLUE_SPAWN_Z_MIN to BLUE_SPAWN_Z_MAX
+      spawnZ = -100 + Math.random() * 10; // BLUE_SPAWN_Z_MIN to BLUE_SPAWN_Z_MAX
     } else {
-      spawnZ = 85 + Math.random() * 15; // RED_SPAWN_Z_MIN to RED_SPAWN_Z_MAX
+      spawnZ = 90 + Math.random() * 10; // RED_SPAWN_Z_MIN to RED_SPAWN_Z_MAX
     }
     
-    const spawnX = (Math.random() - 0.5) * 80; // SPAWN_X_RANGE
+    const spawnX = (Math.random() - 0.5) * 40; // SPAWN_X_RANGE * 2
     const groundY = this.world.getGroundHeight(spawnX, spawnZ);
     this.position.set(spawnX, groundY, spawnZ);
     this.velocity.set(0, 0, 0);
