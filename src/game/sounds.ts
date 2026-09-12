@@ -6,6 +6,10 @@ export class SoundManager {
     const initAudio = () => {
       if (!this.audioContext) {
         this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        // Resume audio context if it's suspended
+        if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume();
+        }
       }
       document.removeEventListener('click', initAudio);
       document.removeEventListener('keydown', initAudio);

@@ -28,27 +28,34 @@ function App() {
       canvas.height = window.innerHeight;
     }
     
-    const game = new Game(canvas, gameMode);
-    game.onStateChange = (state) => setGameState(state);
-    
-    // Set team for online multiplayer
-    if (gameMode === 'online') {
-      game.playerTeam = selectedTeam;
-      game.player.team = selectedTeam;
-    }
-    
-    game.start();
-    gameRef.current = game;
-    console.log('Game created and started');
-    
-    // Auto-start when game is created
-    game.requestPointerLock(canvas);
-    setStarted(true);
+    // Create game after a small delay to ensure canvas is ready
+    setTimeout(() => {
+      if (!canvasRef.current || gameRef.current) return;
+      
+      const game = new Game(canvasRef.current, gameMode);
+      game.onStateChange = (state) => setGameState(state);
+      
+      // Set team for online multiplayer
+      if (gameMode === 'online') {
+        game.playerTeam = selectedTeam;
+        game.player.team = selectedTeam;
+      }
+      
+      game.start();
+      gameRef.current = game;
+      console.log('Game created and started');
+      
+      // Auto-start when game is created
+      game.requestPointerLock(canvasRef.current);
+      setStarted(true);
+    }, 100);
     
     return () => { 
       console.log('Cleaning up game');
-      game.destroy(); 
-      gameRef.current = null;
+      if (gameRef.current) {
+        gameRef.current.destroy(); 
+        gameRef.current = null;
+      }
     };
   }, [gameMode, selectedTeam]);
 

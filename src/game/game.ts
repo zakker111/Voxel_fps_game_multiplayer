@@ -359,27 +359,57 @@ export class Game {
   }
 
   private createWeaponModels(): void {
-    // Rifle
+    // Rifle - WW2 style with visible colors
     const rifle = new THREE.Group();
-    const rifleBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.55), new THREE.MeshLambertMaterial({ color: 0x2a2a2a }));
+    const rifleBody = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.08, 0.55),
+      new THREE.MeshStandardMaterial({ color: 0x5a5a5a, metalness: 0.7, roughness: 0.3 })
+    );
     rifleBody.position.set(0, 0, -0.15);
     rifle.add(rifleBody);
-    const rifleBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.6, 8), new THREE.MeshLambertMaterial({ color: 0x1a1a1a }));
+    
+    const rifleBarrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.025, 0.6, 8),
+      new THREE.MeshStandardMaterial({ color: 0x3a3a3a, metalness: 0.8, roughness: 0.2 })
+    );
     rifleBarrel.rotation.x = Math.PI / 2;
     rifleBarrel.position.set(0, 0.01, -0.65);
     rifle.add(rifleBarrel);
+    
+    const rifleStock = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.12, 0.3),
+      new THREE.MeshStandardMaterial({ color: 0x8B4513, metalness: 0.1, roughness: 0.8 })
+    );
+    rifleStock.position.set(0, -0.02, 0.25);
+    rifle.add(rifleStock);
+    
     rifle.position.copy(this.hipPosition);
     this.weaponModels.set('rifle', rifle);
 
-    // SMG
+    // SMG - Thompson style with visible colors
     const smg = new THREE.Group();
-    const smgBody = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.35), new THREE.MeshLambertMaterial({ color: 0x2a2a2a }));
+    const smgBody = new THREE.Mesh(
+      new THREE.BoxGeometry(0.09, 0.09, 0.35),
+      new THREE.MeshStandardMaterial({ color: 0x5a5a5a, metalness: 0.7, roughness: 0.3 })
+    );
     smgBody.position.set(0, 0, -0.1);
     smg.add(smgBody);
-    const smgBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.35, 8), new THREE.MeshLambertMaterial({ color: 0x1a1a1a }));
+    
+    const smgBarrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.025, 0.35, 8),
+      new THREE.MeshStandardMaterial({ color: 0x3a3a3a, metalness: 0.8, roughness: 0.2 })
+    );
     smgBarrel.rotation.x = Math.PI / 2;
     smgBarrel.position.set(0, 0.01, -0.4);
     smg.add(smgBarrel);
+    
+    const smgStock = new THREE.Mesh(
+      new THREE.BoxGeometry(0.07, 0.1, 0.18),
+      new THREE.MeshStandardMaterial({ color: 0x8B4513, metalness: 0.1, roughness: 0.8 })
+    );
+    smgStock.position.set(0, -0.01, 0.18);
+    smg.add(smgStock);
+    
     smg.position.copy(this.hipPosition);
     this.weaponModels.set('smg', smg);
 
@@ -399,7 +429,7 @@ export class Game {
     const pickHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8), new THREE.MeshLambertMaterial({ color: 0x6b4423 }));
     pickHandle.position.set(0, 0, -0.2);
     pickaxe.add(pickHandle);
-    const pickHead = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.04, 0.04), new THREE.MeshLambertMaterial({ color: 0x666666 }));
+    const pickHead = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.04, 0.04), new THREE.MeshLambertMaterial({ color: 0x888888 }));
     pickHead.position.set(0, 0.25, -0.45);
     pickaxe.add(pickHead);
     pickaxe.position.copy(this.hipPosition);
@@ -602,13 +632,16 @@ export class Game {
     const dir = this.player.getAimDirection();
     const muzzlePos = this.player.camera.position.clone().add(dir.clone().multiplyScalar(0.5));
     
-    // Create muzzle flash
     this.createMuzzleFlash(muzzlePos, dir.clone());
-    
-    // Create bullet tracer
     this.createBulletTracer(muzzlePos, dir.clone());
+    
+    // Play appropriate sound based on weapon
+    if (this.equipment === 'rifle') {
+      this.sounds.rifleShot();
+    } else if (this.equipment === 'smg') {
+      this.sounds.smgShot();
+    }
 
-    // Check for hits
     const hit = this.world.raycast(muzzlePos, dir, 100);
     if (hit) {
       const voxel = this.world.getVoxel(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z);
@@ -620,12 +653,10 @@ export class Game {
       }
     }
 
-    // Check bot hits
     for (const bot of this.bots) {
       if (bot.isDead || bot.team === this.playerTeam) continue;
       const dist = this.player.position.distanceTo(bot.position);
       if (dist < 50) {
-        // Simplified hit detection
         const toBot = bot.position.clone().sub(this.player.position);
         const dot = toBot.dot(dir);
         if (dot > 0 && dot < 50) {
@@ -634,10 +665,12 @@ export class Game {
           if (distToBot < 1) {
             bot.hp -= 34;
             this.hitMarkerTimer = 0.2;
+            this.sounds.hitMarker();
             if (bot.hp <= 0) {
               bot.isDead = true;
               bot.mesh.visible = false;
               this.blueKills++;
+              this.sounds.killSound();
             }
           }
         }
@@ -658,6 +691,7 @@ export class Game {
       if (destroyed) {
         this.inventory++;
         this.world.updateVoxelColor(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z, 0, 0);
+        this.sounds.pickaxeHit();
       }
     }
   }
@@ -673,6 +707,7 @@ export class Game {
     if (hit) {
       this.world.damageVoxel(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z, 3);
       this.world.updateVoxelColor(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z, 0, 0);
+      this.sounds.spadeHit();
     }
   }
 
@@ -691,6 +726,7 @@ export class Game {
       if (!this.world.isSolid(px, py, pz) && this.world.canBuild(px, py, pz)) {
         this.world.setVoxel(px, py, pz, VOXEL_BUILT, 3);
         this.inventory--;
+        this.sounds.buildPlace();
       }
     }
   }
@@ -745,13 +781,11 @@ export class Game {
     this.player.update(dt);
     this.world.update();
 
-    // Update weapon position
     if (this.currentWeaponModel) {
       const targetPos = this.isAiming ? this.adsPosition : this.hipPosition;
       this.currentWeaponModel.position.lerp(targetPos, Math.min(dt * 10, 1));
     }
 
-    // Update reload animation
     if (this.isReloadAnimating) {
       this.reloadAnimationTime += dt;
       if (this.reloadAnimationTime >= this.reloadAnimationDuration) {
@@ -762,7 +796,6 @@ export class Game {
       }
     }
 
-    // Update muzzle flashes
     for (let i = this.muzzleFlashes.length - 1; i >= 0; i--) {
       const flash = this.muzzleFlashes[i];
       flash.life += dt;
@@ -773,7 +806,6 @@ export class Game {
       }
     }
 
-    // Update bullet tracers
     for (let i = this.bulletTracers.length - 1; i >= 0; i--) {
       const tracer = this.bulletTracers[i];
       tracer.mesh.position.add(tracer.velocity.clone().multiplyScalar(dt));
@@ -784,10 +816,8 @@ export class Game {
       }
     }
 
-    // Update bots
     this.updateBots(dt);
 
-    // Update messages
     if (this.messageTimer > 0) {
       this.messageTimer -= dt;
       if (this.messageTimer <= 0) this.message = '';
@@ -816,7 +846,6 @@ export class Game {
         continue;
       }
 
-      // Simple bot AI
       bot.moveTimer -= dt;
       if (bot.moveTimer <= 0) {
         bot.moveTimer = 2 + Math.random() * 3;
@@ -829,7 +858,6 @@ export class Game {
         );
       }
 
-      // Move toward target
       const toTarget = bot.targetPos.clone().sub(bot.position);
       toTarget.y = 0;
       if (toTarget.length() > 0.5) {
@@ -840,7 +868,6 @@ export class Game {
         bot.mesh.rotation.y = Math.atan2(toTarget.x, toTarget.z);
       }
 
-      // Update ground
       const groundY = this.world.getGroundHeight(bot.position.x, bot.position.z);
       bot.position.y = groundY;
       bot.mesh.position.copy(bot.position);
