@@ -1129,24 +1129,25 @@ export class Game {
         const dir = toEnemy.normalize();
         const hit = this.world.raycast(bot.position.clone().add(new THREE.Vector3(0, 1.5, 0)), dir, 40);
         
-          if (!hit || hit.distance > 40) {
-            // No obstacle - shoot
-            if (enemyTarget.isPlayer) {
-              // Shoot at player
-              const accuracy = 0.3 + bot.skill * 0.3;
-              if (Math.random() < accuracy) {
-                const damage = 20 + Math.random() * 15;
-                this.player.takeDamage(damage);
-                this.hitMarkerTimer = 0.2;
-                this.sounds.hitMarker();
-                
-                if (this.player.isDead) {
-                  this.redKills++;
-                  this.sounds.killSound();
-                }
+        if (!hit || hit.distance > 40) {
+          // No obstacle - shoot
+          if (enemyTarget.isPlayer) {
+            // Shoot at player
+            const accuracy = 0.3 + bot.skill * 0.3;
+            if (Math.random() < accuracy) {
+              const damage = 20 + Math.random() * 15;
+              this.player.takeDamage(damage);
+              this.hitMarkerTimer = 0.2;
+              this.sounds.hitMarker();
+              
+              if (this.player.isDead) {
+                this.redKills++;
+                this.sounds.killSound();
               }
             }
-          }      }
+          }
+        }
+      }
 
       // Update crouch state
       if (bot.behaviorState === 'crouch') {
