@@ -141,6 +141,8 @@ export class Player {
     // Face toward enemy team
     this.yaw = team === 'blue' ? Math.PI : 0;
     this.pitch = 0;
+    
+    // Note: Ammo reset is handled by the game class after calling respawn
   }
 
   private isPointInSolid(x: number, y: number, z: number): boolean {

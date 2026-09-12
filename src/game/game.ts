@@ -3009,6 +3009,12 @@ export class Game {
         
         // Respawn player at their base
         this.player.respawn(this.playerTeam);
+        
+        // Reset ammo to full
+        for (const weapon of Object.values(this.weapons)) {
+          weapon.currentAmmo = weapon.magazineSize;
+        }
+        
         this.sounds.capture();
       }
     }
@@ -3365,6 +3371,12 @@ export class Game {
     this.networkClient.onMessage('playerRespawned', (msg) => {
       if (msg.playerId === this.localPlayerId) {
         this.player.respawn(this.playerTeam);
+        
+        // Reset ammo to full
+        for (const weapon of Object.values(this.weapons)) {
+          weapon.currentAmmo = weapon.magazineSize;
+        }
+        
         this.sounds.respawn();
       }
     });
