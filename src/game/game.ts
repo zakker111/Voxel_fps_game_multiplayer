@@ -977,7 +977,7 @@ export class Game {
 
       if (closestBot.hp <= 0) {
         closestBot.isDead = true;
-        closestBot.respawnTimer = 12; // Increased from 8 to 12 seconds
+        closestBot.respawnTimer = 13; // Increased to 13 seconds to match player
         
         // Start death animation instead of hiding immediately
         this.deathAnimations.set(closestBot.mesh.uuid, {
@@ -2215,6 +2215,17 @@ export class Game {
           bot.behaviorState = 'escort';
           bot.behaviorTimer = 2 + Math.random() * 2;
         }
+        // CAPTURE FLAG - High priority when no enemy nearby or far away
+        else if (!enemyTarget || distToEnemy > 30) {
+          // 70% chance to capture flag when no immediate threat
+          if (Math.random() < 0.7) {
+            bot.behaviorState = 'capture';
+            bot.behaviorTimer = 4 + Math.random() * 3;
+          } else {
+            bot.behaviorState = 'patrol';
+            bot.behaviorTimer = 3 + Math.random() * 2;
+          }
+        }
         // COMBAT BEHAVIORS - MORE DEFENSIVE
         else if (enemyTarget && distToEnemy < 20) {
           const roll = Math.random();
@@ -2293,12 +2304,24 @@ export class Game {
           if (bot.moveTimer <= 0) {
             bot.moveTimer = 1.5 + Math.random() * 2;
             const flagPos = bot.team === 'blue' ? RED_FLAG_POS : BLUE_FLAG_POS;
-            const offset = bot.behaviorState === 'capture' ? 0.3 : 0;
-            bot.targetPos.set(
-              flagPos.x + (Math.random() - 0.5) * 40 * (1 - offset),
-              bot.position.y,
-              flagPos.z + (Math.random() - 0.5) * 30 * (1 - offset)
-            );
+            
+            // If in capture mode, be more direct and aggressive
+            if (bot.behaviorState === 'capture') {
+              // Move directly toward flag with slight variation
+              const directness = 0.8 + Math.random() * 0.2; // 80-100% direct
+              bot.targetPos.set(
+                flagPos.x + (Math.random() - 0.5) * 10 * (1 - directness),
+                bot.position.y,
+                flagPos.z + (Math.random() - 0.5) * 10 * (1 - directness)
+              );
+            } else {
+              // Patrol with more variation
+              bot.targetPos.set(
+                flagPos.x + (Math.random() - 0.5) * 40,
+                bot.position.y,
+                flagPos.z + (Math.random() - 0.5) * 30
+              );
+            }
           }
           break;
         }
@@ -2332,15 +2355,30 @@ export class Game {
         case 'flank':
           bot.isCrouching = false;
           if (enemyTarget) {
-            // Move to side of enemy
+            // Improved flanking: move to side of enemy while considering flag position
             const toEnemy = enemyTarget.pos.clone().sub(bot.position);
             const flankAngle = Math.PI / 2 * (bot.strafeDirection > 0 ? 1 : -1);
             const flankX = Math.cos(flankAngle) * toEnemy.x - Math.sin(flankAngle) * toEnemy.z;
             const flankZ = Math.sin(flankAngle) * toEnemy.x + Math.cos(flankAngle) * toEnemy.z;
+            
+            // Calculate flank position (5-10 units to the side of enemy)
+            const flankDist = 5 + Math.random() * 5;
+            let flankPosX = enemyTarget.pos.x + flankX * flankDist;
+            let flankPosZ = enemyTarget.pos.z + flankZ * flankDist;
+            
+            // If carrying flag, try to flank toward own base instead
+            if (bot.carryingFlag) {
+              const ownFlagPos = bot.team === 'blue' ? BLUE_FLAG_POS : RED_FLAG_POS;
+              const toBase = new THREE.Vector3(ownFlagPos.x - bot.position.x, 0, ownFlagPos.z - bot.position.z);
+              const baseAngle = Math.atan2(toBase.z, toBase.x);
+              flankPosX = bot.position.x + Math.cos(baseAngle + flankAngle * 0.3) * flankDist;
+              flankPosZ = bot.position.z + Math.sin(baseAngle + flankAngle * 0.3) * flankDist;
+            }
+            
             bot.targetPos.set(
-              enemyTarget.pos.x + flankX * 0.5,
+              flankPosX,
               bot.position.y,
-              enemyTarget.pos.z + flankZ * 0.5
+              flankPosZ
             );
           }
           break;
@@ -2571,7 +2609,7 @@ export class Game {
       if (bot.position.y < -10) {
         this.dropBotFlag(bot);
         bot.isDead = true;
-        bot.respawnTimer = 2;
+        bot.respawnTimer = 13; // Increased to 13 seconds to match player
         bot.mesh.visible = false;
         continue;
       }
@@ -2665,7 +2703,7 @@ export class Game {
             if (enemyTarget.bot.hp <= 0) {
               this.dropBotFlag(enemyTarget.bot);
               enemyTarget.bot.isDead = true;
-              enemyTarget.bot.respawnTimer = 8;
+              enemyTarget.bot.respawnTimer = 13; // Increased to 13 seconds to match player
               enemyTarget.bot.mesh.visible = false;
               if (bot.team === 'blue') this.blueKills++;
               else this.redKills++;
@@ -2985,7 +3023,7 @@ export class Game {
         
         // Respawn bot at their base
         bot.isDead = true;
-        bot.respawnTimer = 10; // Increased from 5 to 10 seconds
+        bot.respawnTimer = 13; // Increased to 13 seconds to match player
         this.sounds.capture();
       }
     }

@@ -118,7 +118,7 @@ export class Player {
 
   die(): void {
     this.isDead = true;
-    this.respawnTimer = 10; // Increased from 6 to 10 seconds
+    this.respawnTimer = 13; // Increased to 13 seconds to match bots
   }
 
   respawn(team: 'red' | 'blue' = 'blue'): void {
