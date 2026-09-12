@@ -1,6 +1,6 @@
-# 🚀 Quick Start Guide - Get Your Game Live in 10 Minutes
+# 🚀 Quick Start Guide - Deploy Your Game in 10 Minutes
 
-This guide will help you deploy your Voxel FPS game so others can test it online.
+This guide will help you deploy your Voxel FPS game so others can test it.
 
 ---
 

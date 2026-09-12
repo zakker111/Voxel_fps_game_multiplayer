@@ -1,21 +1,19 @@
-# 🎮 Voxel FPS
+# 🎮 Voxel FPS - Multiplayer Capture the Flag
 
-A multiplayer voxel-based first-person shooter with capture-the-flag gameplay, built with React, Three.js, and TypeScript.
+A complete multiplayer voxel-based first-person shooter with capture-the-flag gameplay, built with React, Three.js, and TypeScript.
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![TypeScript](https://img.shields.io/badge/typescript-100%25-blue)
 
-## 🎯 Overview
+## ✨ Features
 
-Voxel FPS is a complete multiplayer first-person shooter featuring:
-
-- **Capture the Flag** gameplay with full flag pickup/drop/capture mechanics
-- **Server-authoritative multiplayer** for fair, cheat-free gameplay
-- **Advanced AI bots** with 11 behavior states and intelligent decision making
-- **Destructible voxel environment** - build and destroy terrain
-- **Spatial audio** with distance-based volume and 3D positioning
-- **Multiple weapons** - Rifle, SMG, Pickaxe, and Spade
+- **🎯 Capture the Flag** - Complete CTF gameplay with flag pickup/drop/capture
+- **🌐 Multiplayer** - Play with friends online or against AI bots
+- **🤖 Advanced AI** - 11 behavior states with intelligent decision making
+- **🔊 Spatial Audio** - Immersive 3D audio with distance-based volume
+- **🏗️ Destructible Environment** - Build and destroy voxel terrain
+- **🔫 Multiple Weapons** - Rifle, SMG, Pickaxe, and Spade
 
 ## 🚀 Quick Start
 
@@ -27,7 +25,7 @@ Voxel FPS is a complete multiplayer first-person shooter featuring:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/voxel-fps.git
+git clone <your-repo-url>
 cd voxel-fps
 
 # Install dependencies
@@ -39,13 +37,13 @@ npm run build
 
 ### Running Locally
 
-#### Option 1: Singleplayer/Bots Mode
+#### Singleplayer/Bots Mode
 ```bash
 npm run dev
 # Open http://localhost:5173
 ```
 
-#### Option 2: Full Multiplayer
+#### Multiplayer Mode
 ```bash
 # Terminal 1 - Start server
 npm run server
@@ -55,133 +53,189 @@ npm run dev
 # Open http://localhost:5173 and select "Online Multiplayer"
 ```
 
-## 🌐 Deployment
+## 🌐 Hosting for Others to Test
 
-### Quick Deploy (10 minutes, Free)
+### Option 1: Railway (Recommended - Easiest)
 
-**Server:** Deploy to [Railway](https://railway.app)
-1. Push to GitHub
-2. Deploy to Railway
-3. Add environment variable: `PORT = 3000`
-4. Get server URL: `wss://your-game.up.railway.app`
+**Step 1: Create Railway Account**
+1. Go to https://railway.app
+2. Sign up with GitHub
 
-**Client:** Deploy to [Vercel](https://vercel.com)
-1. Update server URL in `src/game/game.ts`
-2. Deploy to Vercel
-3. Get client URL: `https://voxel-fps.vercel.app`
+**Step 2: Deploy Your Game**
+1. Push your code to GitHub
+2. In Railway, click "New Project" → "Deploy from GitHub repo"
+3. Select your repository
+4. Railway will automatically detect it's a Node.js app
+5. Add environment variable: `PORT = 3000`
+6. Click "Deploy"
 
-**Share the client URL with friends!**
+**Step 3: Get Your Server URL**
+1. After deployment, Railway gives you a URL like: `wss://your-game.up.railway.app`
+2. Update client to use this URL:
+   ```typescript
+   // In src/game/game.ts
+   this.networkClient = new NetworkClient('wss://your-game.up.railway.app');
+   ```
+3. Rebuild and deploy client
 
-See [QUICK_START.md](QUICK_START.md) for detailed step-by-step instructions.
+**Step 4: Deploy Client**
+- Use Vercel, Netlify, or GitHub Pages for the client
+- Update the server URL in the client code before building
 
-### Other Deployment Options
+### Option 2: Render (Free Tier)
 
-- **Render** - Free tier, easy setup
-- **Fly.io** - Free tier, global edge deployment
-- **VPS** - DigitalOcean, AWS, Linode ($4-6/month)
+**Step 1: Create Render Account**
+1. Go to https://render.com
+2. Sign up with GitHub
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment guide.
+**Step 2: Deploy Server**
+1. Click "New" → "Web Service"
+2. Connect your GitHub repository
+3. Configure:
+   - **Name:** voxel-fps-server
+   - **Environment:** Node
+   - **Build Command:** `npm install && npm run build`
+   - **Start Command:** `npm run server`
+4. Add environment variable: `PORT = 3000`
+5. Click "Create Web Service"
 
-## 🎮 Game Features
+**Step 3: Get Server URL**
+- Render gives you a URL like: `wss://voxel-fps-server.onrender.com`
+- Update client code with this URL
 
-### Gameplay Modes
-- **Singleplayer** - Practice mode without enemies
-- **With Bots** - Play against AI (6 blue allies + 7 red enemies)
-- **Online Multiplayer** - Play against real players
+### Option 3: Fly.io (Free Tier)
 
-### Controls
-| Action | Control |
-|--------|---------|
-| Move | WASD |
-| Look | Mouse |
-| Shoot/Use | Left Click |
-| Aim/Build | Right Click |
-| Switch Weapon | 1-4 |
-| Jump | Space |
-| Sprint | Shift |
-| Reload | R |
-
-### Weapons
-- **Rifle** - Accurate long-range weapon (10 rounds, 2.0s reload)
-- **SMG** - Fast close-range weapon (30 rounds, 1.5s reload)
-- **Pickaxe** - Harvest blocks for building (3 hits per block)
-- **Spade** - Fast terrain removal (instant destruction)
-
-### Capture the Flag
-- Pick up enemy flag at their base
-- Bring it to your base to score
-- Flag drops if carrier dies (60-second return timer)
-- Full synchronization across all clients
-
-## 🏗️ Architecture
-
-```
-src/
-├── game/              # Client-side game logic
-│   ├── game.ts       # Main game class
-│   ├── player.ts     # Player controller
-│   ├── world.ts      # Voxel world system
-│   ├── sounds.ts     # Audio system
-│   └── networkClient.ts  # Network client
-├── server/           # Server-side game logic
-│   ├── server.ts     # WebSocket server
-│   ├── serverGame.ts # Server game logic
-│   ├── serverPlayer.ts # Server player management
-│   └── serverWorld.ts # Server world management
-└── shared/           # Shared types and constants
-    └── types.ts      # Type definitions
-```
-
-### Key Features
-- **Server-Authoritative** - Server validates all actions
-- **Chunk-Based Rendering** - Efficient 16x16 voxel chunks
-- **Real-Time Physics** - 20 ticks per second
-- **WebSocket Communication** - Real-time client-server sync
-
-## 📊 Tech Stack
-
-- **Frontend:** React 18, TypeScript, Three.js, Vite
-- **Backend:** Node.js, WebSocket
-- **Build:** Vite (fast builds)
-- **Deployment:** Railway, Render, Vercel, or VPS
-
-## 🧪 Testing
-
-### Local Testing
+**Step 1: Install Fly CLI**
 ```bash
-# Start server
-npm run server
+# macOS/Linux
+curl -L https://fly.io/install.sh | sh
 
-# Start client
-npm run dev
-
-# Open two browser windows
-# Both select "Online Multiplayer"
+# Windows
+powershell -Command "iwr https://fly.io/install.ps1 -useb | iex"
 ```
 
-### Multiplayer Testing
-1. Deploy server to Railway
-2. Deploy client to Vercel
-3. Share client URL with testers
-4. Testers click "Online Multiplayer"
+**Step 2: Login and Deploy**
+```bash
+fly auth login
+fly launch
+fly deploy
+```
 
-## 📚 Documentation
+**Step 3: Get Server URL**
+- Fly gives you a URL like: `wss://your-app.fly.dev`
+- Update client code with this URL
 
-- **[README.md](README.md)** - This file
-- **[QUICK_START.md](QUICK_START.md)** - 10-minute deployment guide
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide
-- **[PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)** - Complete project overview
-- **[src/server/README.md](src/server/README.md)** - Server documentation
+### Option 4: VPS (DigitalOcean, AWS, etc.)
 
-## 🐛 Known Issues
+**Step 1: Set Up VPS**
+1. Create a VPS (Ubuntu 20.04+ recommended)
+2. SSH into your server
+3. Install Node.js 18+:
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+   sudo apt-get install -y nodejs
+   ```
 
-1. **Large Bundle Size** - Bundle is >500KB
-   - **Solution:** Consider code splitting for production
-   - **Impact:** Initial load time may be slower
+**Step 2: Deploy Your Game**
+```bash
+# Clone your repository
+git clone https://github.com/yourusername/voxel-fps.git
+cd voxel-fps
 
-2. **Server Restart** - Server requires manual restart on code changes
-   - **Solution:** Use PM2 for auto-restart
-   - **Command:** `pm2 start npm --name "voxel-fps" -- run server`
+# Install dependencies
+npm install
+
+# Build the project
+npm run build
+
+# Install PM2 (process manager)
+sudo npm install -g pm2
+
+# Start the server with PM2
+pm2 start npm --name "voxel-fps" -- run server
+
+# Save PM2 configuration
+pm2 save
+pm2 startup
+```
+
+**Step 3: Configure Firewall**
+```bash
+# Allow port 3000
+sudo ufw allow 3000
+sudo ufw reload
+```
+
+**Step 4: Get Server IP**
+- Your server IP will be something like: `wss://123.45.67.89:3000`
+- Update client code with this URL
+
+---
+
+## 🔧 Updating Client for Online Server
+
+After deploying your server, update the client to connect to it:
+
+**Step 1: Update Server URL**
+Edit `src/game/game.ts`:
+```typescript
+// Find this line in initializeNetwork():
+this.networkClient = new NetworkClient('ws://localhost:3000');
+
+// Change to your server URL (use wss:// for HTTPS):
+this.networkClient = new NetworkClient('wss://your-server-url.com');
+```
+
+**Step 2: Rebuild Client**
+```bash
+npm run build
+```
+
+**Step 3: Deploy Client**
+Upload the `dist/` folder to your hosting service (Vercel, Netlify, GitHub Pages, etc.)
+
+---
+
+## 🌐 Hosting Client Online
+
+### Vercel (Recommended)
+1. Go to https://vercel.com
+2. Sign up with GitHub
+3. Import your repository
+4. Vercel auto-detects Vite
+5. Deploy!
+
+### Netlify
+1. Go to https://netlify.com
+2. Sign up with GitHub
+3. Drag and drop your `dist/` folder
+4. Or connect your repository for auto-deploy
+
+### GitHub Pages
+1. Push your code to GitHub
+2. Go to repository settings
+3. Enable GitHub Pages
+4. Select branch and folder
+5. Your site will be at: `https://username.github.io/repo-name`
+
+---
+
+## 🎮 Controls
+
+- **WASD** - Move
+- **Mouse** - Look around
+- **Left Click** - Shoot / Use tool
+- **Right Click** - Aim down sights / Build
+- **1-4** - Switch weapons/tools
+- **Space** - Jump
+- **Shift** - Sprint
+- **R** - Reload
+
+## 📋 Tech Stack
+
+- **Frontend:** React, TypeScript, Three.js, Vite
+- **Backend:** Node.js, WebSocket
+- **Deployment:** Railway, Render, Vercel, or any VPS
 
 ## 🤝 Contributing
 
@@ -189,53 +243,22 @@ Contributions are welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+4. Submit a pull request
 
 ## 📄 License
 
 MIT License - feel free to use this project for learning or development.
 
-## 🎯 Roadmap
+## 🐛 Known Issues
 
-### Phase 1: Core Features ✅
-- [x] Basic FPS mechanics
-- [x] Voxel world system
-- [x] Multiplayer infrastructure
-- [x] Capture the Flag gameplay
-- [x] Bot AI system
-
-### Phase 2: Enhanced Features
-- [ ] More weapons and items
-- [ ] Advanced building mechanics
-- [ ] Improved bot AI
-- [ ] Voice chat integration
-- [ ] Replay system
-
-### Phase 3: Polish
-- [ ] Performance optimization
-- [ ] Mobile support
-- [ ] Custom maps
-- [ ] Leaderboards
-- [ ] Achievements
+- Large bundle size (>500KB) - consider code splitting for production
+- Server requires manual restart on code changes (use PM2 for auto-restart)
 
 ## 📞 Support
 
-- **Documentation:** Check README.md and DEPLOYMENT.md
-- **Issues:** Open a GitHub issue
-- **Questions:** Check documentation first
-
-## 🎉 Acknowledgments
-
-Built with:
-- [React](https://reactjs.org/) - UI framework
-- [Three.js](https://threejs.org/) - 3D graphics
-- [TypeScript](https://www.typescriptlang.org/) - Type safety
-- [Vite](https://vitejs.dev/) - Build tool
-- [Node.js](https://nodejs.org/) - Server runtime
+- Open an issue on GitHub for bugs or questions
+- Check the code comments for implementation details
 
 ---
 
-**Ready to play?** Deploy to Railway and Vercel in 10 minutes! 🚀
-
-See [QUICK_START.md](QUICK_START.md) for quick deployment guide.
+**Ready to play?** Deploy to Railway or Render and share with friends! 🎮

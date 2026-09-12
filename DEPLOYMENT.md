@@ -12,10 +12,10 @@ This guide explains how to deploy your Voxel FPS game so others can test it onli
 
 ## 🎯 Quick Deployment Options
 
-### Option 1: Railway (⭐ Recommended - Easiest)
+### Option 1: Railway + Vercel (⭐ Recommended - Easiest)
 
 **Time:** 5 minutes  
-**Cost:** Free tier ($5 credit/month)  
+**Cost:** Free tier  
 **Difficulty:** ⭐ Very Easy
 
 #### Step 1: Push to GitHub
