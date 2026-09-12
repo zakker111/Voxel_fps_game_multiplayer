@@ -224,6 +224,7 @@ export class Game {
   };
 
   constructor(canvas: HTMLCanvasElement, mode: GameMode = 'multiplayer') {
+    console.log('Game constructor started');
     this.canvas = canvas;
     this.clock = new THREE.Clock();
     this.sounds = new SoundManager();
@@ -252,17 +253,21 @@ export class Game {
     sun.shadow.camera.bottom = -50;
     this.scene.add(sun);
 
+    console.log('Creating world...');
     this.world = new VoxelWorld();
     this.scene.add(this.world.mesh);
+    console.log('World created and added to scene');
 
     this.addTeamZoneMarkers();
 
+    console.log('Creating player...');
     this.player = new Player(this.world);
     this.player.team = 'blue';
     const blueSpawn = this.getSafeSpawnPos('blue');
     this.player.position.copy(blueSpawn);
     this.player.yaw = Math.PI;
     this.player.updateCamera();
+    console.log('Player created');
 
     const hlGeo = new THREE.BoxGeometry(VOXEL_SIZE + 0.02, VOXEL_SIZE + 0.02, VOXEL_SIZE + 0.02);
     const hlMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.6 });
@@ -290,13 +295,20 @@ export class Game {
     this.createCaptureZones();
 
     if (this.gameMode === 'multiplayer') {
+      console.log('Spawning bots...');
       this.spawnTeamBots('blue', 6);
       this.spawnTeamBots('red', 7);
+      console.log('Bots spawned');
     }
 
     if (this.gameMode === 'online') {
       this.initializeNetwork();
     }
+    
+    console.log('Game constructor completed successfully');
+  }
+  }
+  }
 
     this.boundResize = this.onResize.bind(this);
     this.boundMouseDown = this.onMouseDown.bind(this);
@@ -314,6 +326,10 @@ export class Game {
     document.addEventListener('keyup', this.boundKeyUp);
     document.addEventListener('mousemove', this.boundMouseMove);
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    } catch (error) {
+      console.error('Error in game constructor:', error);
+      throw error;
+    }
   }
 
   private addTeamZoneMarkers(): void {
