@@ -206,8 +206,6 @@ export class Game {
   redFlagAtBase: boolean = true; // Is red flag at its base?
   droppedFlags: Array<{ mesh: THREE.Mesh; position: THREE.Vector3; team: Team; respawnTimer: number }> = [];
   captureZoneSize: number = 4; // 4x4 capture zone
-  flagReturnTimer: number = 0; // Timer to return flag to base after capture
-  flagReturnTeam: Team | null = null; // Which team's flag needs to be returned
   
   gameMode: GameMode = 'multiplayer';
   
@@ -526,13 +524,21 @@ export class Game {
       const capturedTeam = this.playerTeam === 'blue' ? 'red' : 'blue';
       if (this.playerTeam === 'blue') {
         this.blueCaptures++;
+        // Return red flag to base immediately
+        this.redFlagAtBase = true;
+        if (this.redFlagMesh) {
+          this.redFlagMesh.visible = true;
+          this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, RED_FLAG_POS.z);
+        }
       } else {
         this.redCaptures++;
+        // Return blue flag to base immediately
+        this.blueFlagAtBase = true;
+        if (this.blueFlagMesh) {
+          this.blueFlagMesh.visible = true;
+          this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, BLUE_FLAG_POS.z);
+        }
       }
-      
-      // Set flag return timer (flag will return to base after 5 seconds)
-      this.flagReturnTimer = 5.0;
-      this.flagReturnTeam = capturedTeam;
       
       this.showMessage(`🏆 ${this.playerTeam.toUpperCase()} CAPTURED THE FLAG!`);
       this.sounds.capture();
@@ -672,17 +678,25 @@ export class Game {
           bot.flagMesh = null;
         }
         
-        // Increment capture score
+        // Increment capture score and return flag to base immediately
         const capturedTeam = bot.team === 'blue' ? 'red' : 'blue';
         if (bot.team === 'blue') {
           this.blueCaptures++;
+          // Return red flag to base immediately
+          this.redFlagAtBase = true;
+          if (this.redFlagMesh) {
+            this.redFlagMesh.visible = true;
+            this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, RED_FLAG_POS.z);
+          }
         } else {
           this.redCaptures++;
+          // Return blue flag to base immediately
+          this.blueFlagAtBase = true;
+          if (this.blueFlagMesh) {
+            this.blueFlagMesh.visible = true;
+            this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, BLUE_FLAG_POS.z);
+          }
         }
-        
-        // Set flag return timer (flag will return to base after 5 seconds)
-        this.flagReturnTimer = 5.0;
-        this.flagReturnTeam = capturedTeam;
         
         this.showMessage(`🏆 ${bot.team.toUpperCase()} bot CAPTURED THE FLAG!`);
         this.sounds.capture();
@@ -3060,29 +3074,6 @@ export class Game {
     // CTF Flag System Updates
     this.checkFlagPickup();
     this.updateDroppedFlags(dt);
-    
-    // Update flag return timer
-    if (this.flagReturnTimer > 0) {
-      this.flagReturnTimer -= dt;
-      if (this.flagReturnTimer <= 0 && this.flagReturnTeam) {
-        // Return flag to base
-        if (this.flagReturnTeam === 'blue') {
-          this.blueFlagAtBase = true;
-          if (this.blueFlagMesh) {
-            this.blueFlagMesh.visible = true;
-            this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, BLUE_FLAG_POS.z);
-          }
-        } else {
-          this.redFlagAtBase = true;
-          if (this.redFlagMesh) {
-            this.redFlagMesh.visible = true;
-            this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, RED_FLAG_POS.z);
-          }
-        }
-        this.showMessage(`🚩 ${this.flagReturnTeam.toUpperCase()} flag returned to base!`);
-        this.flagReturnTeam = null;
-      }
-    }
 
     const targetTransition = this.isAiming ? 1 : 0;
     this.aimTransition += (targetTransition - this.aimTransition) * Math.min(dt * 10, 1);
