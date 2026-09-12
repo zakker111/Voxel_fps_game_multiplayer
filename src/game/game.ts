@@ -70,6 +70,7 @@ interface Bot {
   flagMesh: THREE.Group | null;
   lookAroundTimer: number;
   lookAroundTarget: number;
+  walkCycle: number;
 }
 
 interface Weapon {
@@ -503,6 +504,7 @@ export class Game {
         isAiming: false, aimTransition: 0,
         carryingFlag: false, flagMesh: null,
         lookAroundTimer: 0, lookAroundTarget: 0,
+        walkCycle: Math.random() * Math.PI * 2,
       });
     }
   }
@@ -511,17 +513,80 @@ export class Game {
     const colors = TEAM_COLORS[team];
     const group = new THREE.Group();
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.4), new THREE.MeshLambertMaterial({ color: colors.body }));
+    // Body (torso)
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, 0.8, 0.4),
+      new THREE.MeshLambertMaterial({ color: colors.body })
+    );
     body.position.y = 1.1;
     group.add(body);
 
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), new THREE.MeshLambertMaterial({ color: 0xffdbac }));
+    // Head
+    const head = new THREE.Mesh(
+      new THREE.BoxGeometry(0.4, 0.4, 0.4),
+      new THREE.MeshLambertMaterial({ color: 0xffdbac })
+    );
     head.position.y = 1.8;
     group.add(head);
 
-    const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.2, 0.45), new THREE.MeshLambertMaterial({ color: colors.accent }));
+    // Helmet
+    const helmet = new THREE.Mesh(
+      new THREE.BoxGeometry(0.45, 0.2, 0.45),
+      new THREE.MeshLambertMaterial({ color: colors.accent })
+    );
     helmet.position.y = 2.05;
     group.add(helmet);
+
+    // Left arm
+    const leftArm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.6, 0.2),
+      new THREE.MeshLambertMaterial({ color: colors.body })
+    );
+    leftArm.position.set(-0.4, 1.1, 0);
+    group.add(leftArm);
+
+    // Right arm
+    const rightArm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.6, 0.2),
+      new THREE.MeshLambertMaterial({ color: colors.body })
+    );
+    rightArm.position.set(0.4, 1.1, 0);
+    group.add(rightArm);
+
+    // Left leg
+    const leftLeg = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 0.6, 0.25),
+      new THREE.MeshLambertMaterial({ color: colors.legs })
+    );
+    leftLeg.position.set(-0.15, 0.3, 0);
+    group.add(leftLeg);
+
+    // Right leg
+    const rightLeg = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 0.6, 0.25),
+      new THREE.MeshLambertMaterial({ color: colors.legs })
+    );
+    rightLeg.position.set(0.15, 0.3, 0);
+    group.add(rightLeg);
+
+    // Weapon (rifle or SMG)
+    const weapon = new THREE.Group();
+    const weaponBody = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.08, 0.5),
+      new THREE.MeshLambertMaterial({ color: 0x4a4a4a })
+    );
+    weapon.add(weaponBody);
+    
+    const weaponBarrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.025, 0.025, 0.3, 8),
+      new THREE.MeshLambertMaterial({ color: 0x2a2a2a })
+    );
+    weaponBarrel.rotation.x = Math.PI / 2;
+    weaponBarrel.position.z = -0.3;
+    weapon.add(weaponBarrel);
+    
+    weapon.position.set(0.4, 1.1, -0.3);
+    group.add(weapon);
 
     return group;
   }
@@ -827,6 +892,32 @@ export class Game {
     this.renderer.render(this.scene, this.player.camera);
   };
 
+  private findNearestEnemy(bot: Bot): { pos: THREE.Vector3; isPlayer: boolean; bot?: Bot } | null {
+    let nearest: { pos: THREE.Vector3; isPlayer: boolean; bot?: Bot } | null = null;
+    let nearestDist = Infinity;
+
+    // Check player
+    if (bot.team !== this.playerTeam && !this.player.isDead) {
+      const dist = bot.position.distanceTo(this.player.position);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = { pos: this.player.position.clone(), isPlayer: true };
+      }
+    }
+
+    // Check other bots
+    for (const otherBot of this.bots) {
+      if (otherBot === bot || otherBot.isDead || otherBot.team === bot.team) continue;
+      const dist = bot.position.distanceTo(otherBot.position);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = { pos: otherBot.position.clone(), isPlayer: false, bot: otherBot };
+      }
+    }
+
+    return nearest;
+  }
+
   private updateBots(dt: number): void {
     const startIndex = this.currentBotUpdateIndex;
     const endIndex = Math.min(startIndex + this.botsPerBatch, this.bots.length);
@@ -846,31 +937,182 @@ export class Game {
         continue;
       }
 
+      // Find nearest enemy
+      const enemyTarget = this.findNearestEnemy(bot);
+      const distToEnemy = enemyTarget ? bot.position.distanceTo(enemyTarget.pos) : Infinity;
+
+      // Update behavior state
+      bot.behaviorTimer -= dt;
+      if (bot.behaviorTimer <= 0) {
+        bot.behaviorTimer = 2 + Math.random() * 3;
+        
+        if (enemyTarget && distToEnemy < 20) {
+          // Close range - strafe or engage
+          const roll = Math.random();
+          if (roll < 0.4) {
+            bot.behaviorState = 'strafe';
+            bot.strafeDirection = Math.random() > 0.5 ? 1 : -1;
+          } else if (roll < 0.7) {
+            bot.behaviorState = 'crouch';
+            bot.crouchTimer = 1 + Math.random() * 2;
+          } else {
+            bot.behaviorState = 'engage';
+          }
+        } else if (enemyTarget && distToEnemy < 40) {
+          // Medium range - engage or patrol
+          const roll = Math.random();
+          if (roll < 0.5 * bot.aggression) {
+            bot.behaviorState = 'engage';
+          } else {
+            bot.behaviorState = 'patrol';
+          }
+        } else {
+          // No enemy - patrol
+          bot.behaviorState = 'patrol';
+        }
+      }
+
+      // Execute behavior
       bot.moveTimer -= dt;
       if (bot.moveTimer <= 0) {
         bot.moveTimer = 2 + Math.random() * 3;
-        const angle = Math.random() * Math.PI * 2;
-        const dist = 5 + Math.random() * 10;
-        bot.targetPos.set(
-          bot.position.x + Math.cos(angle) * dist,
-          bot.position.y,
-          bot.position.z + Math.sin(angle) * dist
-        );
+        
+        if (bot.behaviorState === 'engage' && enemyTarget) {
+          // Move toward enemy
+          bot.targetPos.copy(enemyTarget.pos);
+        } else if (bot.behaviorState === 'strafe' && enemyTarget) {
+          // Strafe around enemy
+          const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+          const perpX = -toEnemy.z * bot.strafeDirection;
+          const perpZ = toEnemy.x * bot.strafeDirection;
+          bot.targetPos.set(
+            bot.position.x + perpX * 0.8,
+            bot.position.y,
+            bot.position.z + perpZ * 0.8
+          );
+        } else {
+          // Patrol - random movement
+          const angle = Math.random() * Math.PI * 2;
+          const dist = 5 + Math.random() * 10;
+          bot.targetPos.set(
+            bot.position.x + Math.cos(angle) * dist,
+            bot.position.y,
+            bot.position.z + Math.sin(angle) * dist
+          );
+        }
       }
 
+      // Move toward target
       const toTarget = bot.targetPos.clone().sub(bot.position);
       toTarget.y = 0;
       if (toTarget.length() > 0.5) {
         toTarget.normalize();
-        const speed = 4;
+        const speed = bot.isCrouching ? 2 : 4;
         bot.position.x += toTarget.x * speed * dt;
         bot.position.z += toTarget.z * speed * dt;
-        bot.mesh.rotation.y = Math.atan2(toTarget.x, toTarget.z);
+        
+        // Smooth rotation toward target
+        const targetYaw = Math.atan2(toTarget.x, toTarget.z);
+        const currentYaw = bot.mesh.rotation.y;
+        let yawDiff = targetYaw - currentYaw;
+        while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+        while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+        bot.mesh.rotation.y += yawDiff * Math.min(dt * 10, 1);
       }
 
+      // Update ground height
       const groundY = this.world.getGroundHeight(bot.position.x, bot.position.z);
       bot.position.y = groundY;
       bot.mesh.position.copy(bot.position);
+
+      // Walking animation - legs and arms swing
+      const isMoving = toTarget.length() > 0.5;
+      if (isMoving) {
+        const walkSpeed = bot.isCrouching ? 6 : 10;
+        bot.walkCycle += dt * walkSpeed;
+        const swing = Math.sin(bot.walkCycle) * 0.5;
+        
+        // Get leg and arm meshes
+        const children = bot.mesh.children;
+        const leftLeg = children.find(c => c.position.x < -0.1 && c.position.y < 1);
+        const rightLeg = children.find(c => c.position.x > 0.1 && c.position.y < 1);
+        const leftArm = children.find(c => c.position.x < -0.3 && c.position.y > 0.8);
+        const rightArm = children.find(c => c.position.x > 0.3 && c.position.y > 0.8);
+        
+        if (leftLeg) leftLeg.rotation.x = swing;
+        if (rightLeg) rightLeg.rotation.x = -swing;
+        if (leftArm) leftArm.rotation.x = -swing * 0.7;
+        if (rightArm) rightArm.rotation.x = swing * 0.7;
+        
+        // Body bob
+        const bob = Math.abs(Math.sin(bot.walkCycle * 2)) * 0.05;
+        bot.mesh.position.y += bob;
+      } else {
+        // Reset animations when not moving
+        const children = bot.mesh.children;
+        const leftLeg = children.find(c => c.position.x < -0.1 && c.position.y < 1);
+        const rightLeg = children.find(c => c.position.x > 0.1 && c.position.y < 1);
+        const leftArm = children.find(c => c.position.x < -0.3 && c.position.y > 0.8);
+        const rightArm = children.find(c => c.position.x > 0.3 && c.position.y > 0.8);
+        
+        if (leftLeg) leftLeg.rotation.x *= 0.9;
+        if (rightLeg) rightLeg.rotation.x *= 0.9;
+        if (leftArm) leftArm.rotation.x *= 0.9;
+        if (rightArm) rightArm.rotation.x *= 0.9;
+      }
+
+      // Head tracking - look at enemy when in combat
+      if (enemyTarget && distToEnemy < 35) {
+        const head = bot.mesh.children.find(c => c.position.y > 1.7 && c.position.y < 2.0);
+        if (head) {
+          const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+          const headYaw = Math.atan2(toEnemy.x, toEnemy.z) - bot.mesh.rotation.y;
+          let normalizedHeadYaw = Math.atan2(Math.sin(headYaw), Math.cos(headYaw));
+          const clampedHeadYaw = Math.max(-1.05, Math.min(1.05, normalizedHeadYaw));
+          head.rotation.y += (clampedHeadYaw - head.rotation.y) * Math.min(dt * 8, 1);
+        }
+      }
+
+      // Shooting
+      bot.shootTimer -= dt;
+      if (bot.shootTimer <= 0 && enemyTarget && distToEnemy < 40) {
+        bot.shootTimer = 1 + Math.random() * 2;
+        
+        // Check line of sight
+        const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+        const dir = toEnemy.normalize();
+        const hit = this.world.raycast(bot.position.clone().add(new THREE.Vector3(0, 1.5, 0)), dir, 40);
+        
+          if (!hit || hit.distance > 40) {
+            // No obstacle - shoot
+            if (enemyTarget.isPlayer) {
+              // Shoot at player
+              const accuracy = 0.3 + bot.skill * 0.3;
+              if (Math.random() < accuracy) {
+                const damage = 20 + Math.random() * 15;
+                this.player.takeDamage(damage);
+                this.hitMarkerTimer = 0.2;
+                this.sounds.hitMarker();
+                
+                if (this.player.isDead) {
+                  this.redKills++;
+                  this.sounds.killSound();
+                }
+              }
+            }
+          }      }
+
+      // Update crouch state
+      if (bot.behaviorState === 'crouch') {
+        bot.crouchTimer -= dt;
+        bot.isCrouching = true;
+        if (bot.crouchTimer <= 0) {
+          bot.isCrouching = false;
+          bot.behaviorState = 'patrol';
+        }
+      } else {
+        bot.isCrouching = false;
+      }
     }
 
     this.currentBotUpdateIndex = endIndex >= this.bots.length ? 0 : endIndex;
