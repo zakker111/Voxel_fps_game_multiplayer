@@ -1943,6 +1943,10 @@ export class Game {
   }
 
   private switchWeaponModel(type: EquipmentType): void {
+    // Cancel any ongoing reload animation when switching weapons
+    this.isReloadAnimating = false;
+    this.reloadAnimationTime = 0;
+    
     if (this.currentWeaponModel) {
       this.weaponContainer.remove(this.currentWeaponModel);
     }
@@ -1951,6 +1955,8 @@ export class Game {
       this.weaponContainer.add(newWeapon);
       this.currentWeaponModel = newWeapon;
       newWeapon.position.copy(this.hipPosition);
+      // Reset rotation to default
+      newWeapon.rotation.set(0, 0, 0);
     }
   }
 
@@ -2991,19 +2997,17 @@ export class Game {
           this.player.flagMesh = null;
         }
         
-        // Return the captured flag to its base
+        // Flag stays hidden after capture (only returns when dropped or game resets)
         const enemyFlagTeam = this.playerTeam === 'blue' ? 'red' : 'blue';
         if (enemyFlagTeam === 'blue') {
-          this.blueFlagAtBase = true;
+          this.blueFlagAtBase = false; // Flag is captured, not at base
           if (this.blueFlagMesh) {
-            this.blueFlagMesh.visible = true;
-            this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, BLUE_FLAG_POS.z);
+            this.blueFlagMesh.visible = false; // Keep flag hidden
           }
         } else {
-          this.redFlagAtBase = true;
+          this.redFlagAtBase = false; // Flag is captured, not at base
           if (this.redFlagMesh) {
-            this.redFlagMesh.visible = true;
-            this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, RED_FLAG_POS.z);
+            this.redFlagMesh.visible = false; // Keep flag hidden
           }
         }
         
@@ -3047,6 +3051,20 @@ export class Game {
             }
           });
           bot.flagMesh = null;
+        }
+        
+        // Flag stays hidden after capture (only returns when dropped or game resets)
+        const enemyFlagTeam = bot.team === 'blue' ? 'red' : 'blue';
+        if (enemyFlagTeam === 'blue') {
+          this.blueFlagAtBase = false; // Flag is captured, not at base
+          if (this.blueFlagMesh) {
+            this.blueFlagMesh.visible = false; // Keep flag hidden
+          }
+        } else {
+          this.redFlagAtBase = false; // Flag is captured, not at base
+          if (this.redFlagMesh) {
+            this.redFlagMesh.visible = false; // Keep flag hidden
+          }
         }
         
         // Respawn bot at their base
