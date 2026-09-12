@@ -6,6 +6,10 @@ export class SoundManager {
     const initAudio = () => {
       if (!this.audioContext) {
         this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        // Resume audio context if it's suspended
+        if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume();
+        }
       }
       document.removeEventListener('click', initAudio);
       document.removeEventListener('keydown', initAudio);
@@ -118,6 +122,14 @@ export class SoundManager {
     this.playTone(400, 0.1, 0.2, 'sine');
     setTimeout(() => this.playTone(600, 0.1, 0.2, 'sine'), 100);
     setTimeout(() => this.playTone(800, 0.1, 0.2, 'sine'), 200);
+  }
+
+  capture() {
+    // Triumphant ascending sequence for flag capture
+    this.playTone(523, 0.15, 0.3, 'sine'); // C5
+    setTimeout(() => this.playTone(659, 0.15, 0.3, 'sine'), 150); // E5
+    setTimeout(() => this.playTone(784, 0.15, 0.3, 'sine'), 300); // G5
+    setTimeout(() => this.playTone(1047, 0.3, 0.4, 'sine'), 450); // C6
   }
 
   weaponSwitch() {

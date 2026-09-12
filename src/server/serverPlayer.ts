@@ -28,6 +28,7 @@ export class ServerPlayer {
   isSprinting: boolean = false;
   isGrounded: boolean = false;
   isShooting: boolean = false;
+  carryingFlag: boolean = false;
   
   // Magazine system
   currentAmmo: number = 10;
@@ -254,6 +255,7 @@ export class ServerPlayer {
       magazineSize: this.magazineSize,
       isReloading: this.isReloading,
       aimTransition: this.isAiming ? 1 : 0, // Sync aiming state
+      carryingFlag: this.carryingFlag,
     };
   }
 }

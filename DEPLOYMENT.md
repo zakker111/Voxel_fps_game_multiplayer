@@ -1,447 +1,485 @@
-# 🚀 Deployment Guide - Voxel FPS
+# 🚀 Deployment Guide - Host Your Game for Testing
 
-This guide will help you deploy the Voxel FPS game to get a public link.
+This guide explains how to deploy your Voxel FPS game so others can test it online.
+
+## 📋 Prerequisites
+
+- GitHub account
+- Node.js 18+ installed locally
+- Basic command line knowledge
+
+---
 
 ## 🎯 Quick Deployment Options
 
-### Option 1: Railway (Recommended - Free Tier Available)
-**Best for:** Full-stack deployment with WebSocket support
+### Option 1: Railway + Vercel (⭐ Recommended - Easiest)
 
-1. **Sign up at [Railway](https://railway.app/)**
-2. **Install Railway CLI:**
-   ```bash
-   npm install -g @railway/cli
-   ```
+**Time:** 5 minutes  
+**Cost:** Free tier  
+**Difficulty:** ⭐ Very Easy
 
-3. **Login:**
-   ```bash
-   railway login
-   ```
+#### Step 1: Push to GitHub
+```bash
+git init
+git add .
+git commit -m "Initial commit - Voxel FPS game"
+git branch -M main
+git remote add origin https://github.com/YOUR_USERNAME/voxel-fps.git
+git push -u origin main
+```
 
-4. **Initialize project:**
-   ```bash
-   railway init
-   ```
+#### Step 2: Deploy to Railway
+1. Go to [railway.app](https://railway.app)
+2. Sign up with GitHub
+3. Click "New Project" → "Deploy from GitHub repo"
+4. Select your repository
+5. Railway auto-detects Node.js
+6. Add environment variable:
+   - Key: `PORT`
+   - Value: `3000`
+7. Click "Deploy"
 
-5. **Deploy:**
-   ```bash
-   railway up
-   ```
+#### Step 3: Get Your Server URL
+After deployment, Railway gives you a URL like:
+```
+wss://voxel-fps.up.railway.app
+```
 
-6. **Get your public URL:**
-   ```bash
-   railway domain
-   ```
+#### Step 4: Update Client Code
+Edit `src/game/game.ts`, find the `initializeNetwork()` method:
+```typescript
+// Change this line:
+this.networkClient = new NetworkClient('ws://localhost:3000');
 
-**Your game will be live at:** `https://your-app-name.up.railway.app`
+// To your Railway URL:
+this.networkClient = new NetworkClient('wss://voxel-fps.up.railway.app');
+```
+
+#### Step 5: Deploy Client to Vercel
+1. Go to [vercel.com](https://vercel.com)
+2. Sign up with GitHub
+3. Click "New Project"
+4. Import your GitHub repository
+5. Vercel auto-detects Vite
+6. Click "Deploy"
+
+You get a client URL like:
+```
+https://voxel-fps.vercel.app
+```
+
+#### Step 6: Share with Friends!
+Send `https://voxel-fps.vercel.app` to your friends. They click "Online Multiplayer" and play!
 
 ---
 
 ### Option 2: Render (Free Tier)
-**Best for:** Easy deployment with automatic HTTPS
 
-1. **Push your code to GitHub**
+**Time:** 5 minutes  
+**Cost:** Free (750 hours/month)  
+**Difficulty:** ⭐ Very Easy
 
-2. **Sign up at [Render](https://render.com/)**
+#### Deploy Server
+1. Go to [render.com](https://render.com)
+2. Sign up with GitHub
+3. Click "New" → "Web Service"
+4. Connect your repository
+5. Configure:
+   - **Name:** voxel-fps-server
+   - **Environment:** Node
+   - **Build Command:** `npm install && npm run build`
+   - **Start Command:** `npm run server`
+6. Add environment variable:
+   - Key: `PORT`
+   - Value: `3000`
+7. Click "Create Web Service"
 
-3. **Create New Web Service:**
-   - Connect your GitHub repository
-   - Build Command: `npm install && npm run build`
-   - Start Command: `npm run server`
-   - Environment Variables:
-     - `NODE_ENV`: `production`
-     - `PORT`: `3000`
+Get URL: `wss://voxel-fps-server.onrender.com`
 
-4. **Deploy** - Render will automatically build and deploy
-
-**Your game will be live at:** `https://your-app-name.onrender.com`
+#### Deploy Client
+Same as Railway Option - use Vercel or Netlify.
 
 ---
 
-### Option 3: Vercel + Separate Server
-**Best for:** Fast frontend with separate backend
+### Option 3: VPS (DigitalOcean, AWS, Linode)
 
-#### Frontend (Vercel):
-1. **Sign up at [Vercel](https://vercel.com/)**
-2. **Install Vercel CLI:**
-   ```bash
-   npm install -g vercel
-   ```
-3. **Deploy frontend:**
-   ```bash
-   vercel
-   ```
+**Time:** 30 minutes  
+**Cost:** $4-6/month  
+**Difficulty:** ⭐⭐⭐ Medium
 
-#### Backend (Railway/Render):
-Deploy the server separately using Option 1 or 2
+#### Step 1: Create VPS
+1. Sign up at DigitalOcean/AWS/Linode
+2. Create a Droplet/Instance
+3. Choose Ubuntu 22.04 LTS
+4. Choose basic plan ($4-6/month)
+5. Add SSH key
+6. Create
 
-**Update client to connect to your server:**
-Edit `src/game/game.ts` line 2181:
-```typescript
-this.networkClient = new NetworkClient('wss://your-server-url.up.railway.app');
+#### Step 2: Connect to VPS
+```bash
+ssh root@your-server-ip
 ```
+
+#### Step 3: Install Node.js
+```bash
+# Update system
+apt update && apt upgrade -y
+
+# Install Node.js 18
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+apt install -y nodejs
+
+# Verify
+node --version  # Should show v18.x.x
+npm --version   # Should show 9.x.x
+```
+
+#### Step 4: Install Git
+```bash
+apt install -y git
+```
+
+#### Step 5: Clone and Setup
+```bash
+cd /var/www
+git clone https://github.com/YOUR_USERNAME/voxel-fps.git
+cd voxel-fps
+npm install
+npm run build
+```
+
+#### Step 6: Install PM2 (Process Manager)
+```bash
+npm install -g pm2
+```
+
+#### Step 7: Start Server
+```bash
+pm2 start npm --name "voxel-fps" -- run server
+```
+
+#### Step 8: Save PM2 Configuration
+```bash
+pm2 save
+pm2 startup
+# Copy and run the command it gives you
+```
+
+#### Step 9: Configure Firewall
+```bash
+# Install UFW if not installed
+apt install -y ufw
+
+# Allow SSH
+ufw allow ssh
+
+# Allow port 3000
+ufw allow 3000
+
+# Enable firewall
+ufw enable
+```
+
+#### Step 10: Get Your Server URL
+Your server URL: `wss://your-server-ip:3000`
+
+Example: `wss://123.45.67.89:3000`
+
+#### Step 11: Update Client Code
+Edit `src/game/game.ts`:
+```typescript
+this.networkClient = new NetworkClient('wss://123.45.67.89:3000');
+```
+
+#### Step 12: Deploy Client
+Deploy to Vercel/Netlify/GitHub Pages (same as Option 1).
 
 ---
 
 ### Option 4: Fly.io (Free Tier)
-**Best for:** Global distribution
 
-1. **Sign up at [Fly.io](https://fly.io/)**
-2. **Install Fly CLI:**
-   ```bash
-   curl -L https://fly.io/install.sh | sh
-   ```
-3. **Login:**
-   ```bash
-   fly auth login
-   ```
-4. **Launch app:**
-   ```bash
-   fly launch
-   ```
-5. **Deploy:**
-   ```bash
-   fly deploy
-   ```
+**Time:** 10 minutes  
+**Cost:** Free tier  
+**Difficulty:** ⭐⭐ Easy
 
-**Your game will be live at:** `https://your-app-name.fly.dev`
+#### Step 1: Install Fly CLI
+```bash
+# macOS/Linux
+curl -L https://fly.io/install.sh | sh
+
+# Windows (PowerShell)
+iwr https://fly.io/install.ps1 -useb | iex
+```
+
+#### Step 2: Login
+```bash
+fly auth login
+```
+
+#### Step 3: Launch App
+```bash
+fly launch
+# Answer prompts:
+# - App name: voxel-fps-server
+# - Region: Choose closest
+# - Database: No
+```
+
+#### Step 4: Deploy
+```bash
+fly deploy
+```
+
+#### Step 5: Get URL
+```bash
+fly status
+```
+
+Get URL: `wss://voxel-fps-server.fly.dev`
 
 ---
 
-## 📋 Pre-Deployment Checklist
+## 🌐 Deploy Client (All Options)
 
-### 1. Build the Project
+### Vercel (Recommended)
 ```bash
-npm install
+npm install -g vercel
+vercel
+# Follow prompts
+```
+
+### Netlify
+```bash
+npm install -g netlify-cli
+netlify deploy --prod
+```
+
+### GitHub Pages
+```bash
+# Build
 npm run build
+
+# Deploy to gh-pages branch
+git subtree push --prefix dist origin gh-pages
 ```
 
-### 2. Test Locally
-```bash
-# Terminal 1 - Start server
-npm run server
-
-# Terminal 2 - Start client
-npm run dev
-```
-
-### 3. Update Server URL for Production
-Edit `src/game/game.ts` line 2181:
-```typescript
-// Change from localhost to your deployed server URL
-this.networkClient = new NetworkClient('wss://your-server-url.com');
-```
-
-### 4. Environment Variables
-Create `.env` file:
-```env
-NODE_ENV=production
-PORT=3000
-```
+Your client URL: `https://YOUR_USERNAME.github.io/voxel-fps`
 
 ---
 
-## 🔧 Server Configuration
-
-### For Production Server
-
-The server is configured to:
-- Serve static files from `dist/` folder
-- Handle WebSocket connections
-- Run on port 3000 (configurable via PORT env var)
+## 🔧 After Deployment
 
 ### Update Server URL in Client
+After deploying your server, update the client code:
 
-After deploying your server, update the client to connect to it:
+**File:** `src/game/game.ts`
 
-**File:** `src/game/game.ts` (line 2181)
+**Find:**
 ```typescript
-// Before (localhost)
-this.networkClient = new NetworkClient('ws://localhost:3000');
-
-// After (production)
-this.networkClient = new NetworkClient('wss://your-server.up.railway.app');
+private initializeNetwork(): void {
+  this.networkClient = new NetworkClient('ws://localhost:3000');
+  // ...
+}
 ```
 
-Then rebuild:
+**Change to:**
+```typescript
+private initializeNetwork(): void {
+  // Use your deployed server URL
+  this.networkClient = new NetworkClient('wss://your-server-url.com');
+  // ...
+}
+```
+
+### Rebuild and Redeploy Client
 ```bash
 npm run build
+# Then redeploy to Vercel/Netlify/GitHub Pages
 ```
 
 ---
 
-## 🌐 Deployment Steps (Step-by-Step)
+## 🧪 Testing Your Deployment
 
-### Complete Deployment to Railway
-
-1. **Prepare your code:**
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git push origin main
+### Test Server Connection
+1. Open browser console (F12)
+2. Go to your client URL
+3. Click "Online Multiplayer"
+4. Check console for:
+   ```
+   Connecting to server: wss://your-server-url.com
+   Connected to server
    ```
 
-2. **Install Railway CLI:**
-   ```bash
-   npm install -g @railway/cli
-   ```
+### Test Multiplayer
+1. Open your client URL in two browser windows
+2. In both windows, click "Online Multiplayer"
+3. Both should connect to the same server
+4. You should see each other in the game
 
-3. **Login to Railway:**
-   ```bash
-   railway login
-   ```
-
-4. **Create new project:**
-   ```bash
-   railway init
-   # Follow prompts to name your project
-   ```
-
-5. **Deploy:**
-   ```bash
-   railway up
-   ```
-
-6. **Get public URL:**
-   ```bash
-   railway domain
-   ```
-
-7. **Update client to use production server:**
-   - Edit `src/game/game.ts` line 2181
-   - Change `ws://localhost:3000` to your Railway URL
-   - Rebuild: `npm run build`
-   - Redeploy: `railway up`
+### Test with Friends
+1. Share your client URL
+2. Friends open it and click "Online Multiplayer"
+3. Everyone connects and plays together!
 
 ---
 
-## 🎮 Testing Your Deployment
+## 🐛 Troubleshooting
 
-### 1. Test Singleplayer Mode
-- Open your public URL
-- Click "Singleplayer"
-- Verify game loads and works
+### "Failed to connect to server"
+**Check:**
+- Server is running: Check deployment logs
+- URL is correct: Use `wss://` for HTTPS
+- Firewall: Ensure port 3000 is open (VPS only)
 
-### 2. Test With Bots Mode
-- Click "With Bots"
-- Verify bots spawn and behave correctly
+### "WebSocket connection failed"
+**Check:**
+- URL format: `wss://your-server.com` (not `ws://` for HTTPS)
+- Server is deployed and running
+- No typos in the URL
 
-### 3. Test Online Multiplayer
-- Open your URL in two different browsers
-- Click "Online Multiplayer" in both
-- Verify players can see each other
-- Test shooting, building, and movement
+### "Client can't connect"
+**Check:**
+- Client is built with correct server URL
+- Client is deployed and accessible
+- Browser console for errors
+- Network tab for WebSocket connection
 
----
-
-## 🔍 Troubleshooting
-
-### WebSocket Connection Failed
-**Problem:** Client can't connect to server
-
-**Solution:**
-1. Check server is running
-2. Verify WebSocket URL is correct (use `wss://` for HTTPS)
-3. Check CORS settings
-4. Verify firewall allows WebSocket connections
-
-### Build Fails
-**Problem:** `npm run build` fails
-
-**Solution:**
+### Server Not Starting (VPS)
+**Check:**
 ```bash
-# Clear cache and reinstall
-rm -rf node_modules package-lock.json
-npm install
-npm run build
+# Check PM2 status
+pm2 status
+
+# Check logs
+pm2 logs voxel-fps
+
+# Restart server
+pm2 restart voxel-fps
 ```
-
-### Server Won't Start
-**Problem:** Server crashes on startup
-
-**Solution:**
-1. Check logs: `railway logs` or `render logs`
-2. Verify PORT environment variable is set
-3. Check all dependencies are installed
-4. Verify TypeScript compilation: `npm run typecheck`
-
-### Multiplayer Not Working
-**Problem:** Players can't see each other
-
-**Solution:**
-1. Verify both clients connect to same server
-2. Check WebSocket connection in browser console
-3. Verify server is broadcasting state updates
-4. Check browser console for errors
 
 ---
 
-## 📊 Free Tier Limits
+## 📊 Deployment Comparison
 
-### Railway
-- **Free tier:** $5 credit/month
-- **Estimated usage:** ~100-200 hours/month for small game
-- **WebSocket:** Supported
-- **Custom domain:** Free
-
-### Render
-- **Free tier:** 750 hours/month
-- **Spins down:** After 15 minutes of inactivity
-- **WebSocket:** Supported
-- **Custom domain:** Free
-
-### Vercel
-- **Free tier:** 100 GB bandwidth/month
-- **Serverless functions:** 100 GB-hours/month
-- **WebSocket:** Requires separate server
-- **Custom domain:** Free
-
-### Fly.io
-- **Free tier:** 3 shared VMs
-- **Bandwidth:** 100 GB/month
-- **WebSocket:** Supported
-- **Custom domain:** Free
+| Platform | Free Tier | Cost After | Setup Time | Performance |
+|----------|-----------|------------|------------|-------------|
+| Railway | $5 credit | ~$5/month | 5 min | ⭐⭐⭐⭐⭐ |
+| Render | 750 hrs | ~$7/month | 5 min | ⭐⭐⭐⭐ |
+| Fly.io | 3 VMs | ~$5/month | 10 min | ⭐⭐⭐⭐⭐ |
+| VPS | None | $4-6/month | 30 min | ⭐⭐⭐⭐⭐ |
 
 ---
 
-## 🚀 Advanced Deployment
+## 🎯 Recommended Setup
 
-### Custom Domain
+### For Testing/Small Groups
+- **Server:** Railway (free tier)
+- **Client:** Vercel (free)
+- **Total Cost:** $0
 
-1. **Buy a domain** (Namecheap, GoDaddy, etc.)
+### For Medium Groups
+- **Server:** Railway or Fly.io ($5/month)
+- **Client:** Vercel or Netlify (free)
+- **Total Cost:** ~$5/month
 
-2. **Configure DNS:**
-   - Add CNAME record pointing to your deployment URL
-   - Example: `play.yourgame.com` → `your-app.up.railway.app`
-
-3. **Enable HTTPS:**
-   - Most platforms provide free SSL certificates
-   - Railway/Render/Vercel auto-configure HTTPS
-
-### Multiple Servers (Scaling)
-
-For large player counts, consider:
-1. **Load balancer** (nginx, HAProxy)
-2. **Multiple server instances**
-3. **Redis for state sharing**
-4. **Database for persistence**
-
-### Monitoring
-
-Add monitoring to track:
-- Player count
-- Server performance
-- Error rates
-- WebSocket connections
-
-**Tools:**
-- [Sentry](https://sentry.io/) - Error tracking
-- [Datadog](https://www.datadoghq.com/) - Monitoring
-- [LogRocket](https://logrocket.com/) - Session replay
+### For Large Groups/Production
+- **Server:** VPS (DigitalOcean $6/month)
+- **Client:** Vercel Pro ($20/month) or custom domain
+- **Total Cost:** ~$26/month
 
 ---
 
-## 📝 Post-Deployment
+## 🔒 SSL/HTTPS
 
-### 1. Share Your Game
-Once deployed, share your public URL:
-```
-https://your-game.up.railway.app
-```
+All platforms provide free HTTPS automatically:
+- ✅ Railway: Automatic HTTPS
+- ✅ Render: Automatic HTTPS
+- ✅ Fly.io: Automatic HTTPS
+- ✅ Vercel: Automatic HTTPS
+- ✅ Netlify: Automatic HTTPS
+- ✅ GitHub Pages: Automatic HTTPS
 
-### 2. Update Documentation
-Update README.md with your public URL:
-```markdown
-## 🎮 Play Now!
-
-**Public URL:** https://your-game.up.railway.app
-```
-
-### 3. Monitor Performance
-- Check server logs regularly
-- Monitor player count
-- Watch for errors
-- Gather player feedback
-
----
-
-## 🎯 Quick Start Commands
-
-### Local Development
+For VPS, use Let's Encrypt:
 ```bash
-# Install dependencies
-npm install
-
-# Start server (Terminal 1)
-npm run server
-
-# Start client (Terminal 2)
-npm run dev
+apt install certbot
+certbot --nginx -d yourdomain.com
 ```
-
-### Build for Production
-```bash
-npm install
-npm run build
-```
-
-### Deploy to Railway
-```bash
-railway login
-railway init
-railway up
-railway domain
-```
-
-### Deploy to Render
-1. Push to GitHub
-2. Connect to Render
-3. Set build/start commands
-4. Deploy
 
 ---
 
-## 💡 Tips
+## 📝 Quick Checklist
 
-1. **Test locally first** before deploying
-2. **Use environment variables** for configuration
-3. **Enable HTTPS** for WebSocket connections
-4. **Monitor logs** for debugging
-5. **Start with free tier** to test
-6. **Scale up** as player count grows
+### Before Deployment
+- [ ] Code pushed to GitHub
+- [ ] All tests passing
+- [ ] README.md updated
+- [ ] No sensitive data in code
+
+### Server Deployment
+- [ ] Server deployed to platform
+- [ ] Server URL obtained (wss://...)
+- [ ] Server tested and working
+- [ ] Environment variables set (PORT=3000)
+
+### Client Deployment
+- [ ] Server URL updated in code
+- [ ] Client rebuilt (`npm run build`)
+- [ ] Client deployed to hosting
+- [ ] Client URL obtained (https://...)
+
+### Testing
+- [ ] Opened client in browser
+- [ ] Selected "Online Multiplayer"
+- [ ] Connected to server successfully
+- [ ] Tested with another player
+- [ ] All features working
 
 ---
 
-## 🆘 Need Help?
+## 🎉 You're Done!
+
+Your game is now live and playable online!
+
+**Share your client URL with friends:**
+```
+https://your-client-url.com
+```
+
+They open it, click "Online Multiplayer", and play together!
+
+---
+
+## 📞 Need Help?
 
 ### Documentation
-- [Railway Docs](https://docs.railway.app/)
-- [Render Docs](https://render.com/docs)
-- [Vercel Docs](https://vercel.com/docs)
-- [Fly.io Docs](https://fly.io/docs/)
+- `README.md` - Main project documentation
+- `src/server/README.md` - Server documentation
+
+### Platform Support
+- Railway: [docs.railway.app](https://docs.railway.app)
+- Render: [render.com/docs](https://render.com/docs)
+- Fly.io: [fly.io/docs](https://fly.io/docs)
+- Vercel: [vercel.com/docs](https://vercel.com/docs)
 
 ### Common Issues
-- Check browser console for errors
-- Verify WebSocket URL is correct
-- Ensure server is running
-- Check firewall settings
+1. Check deployment platform logs
+2. Check browser console for errors
+3. Verify all URLs are correct
+4. Ensure ports are open (VPS only)
 
 ---
 
-## ✅ Success Checklist
+## 🚀 Next Steps
 
-- [ ] Code builds successfully (`npm run build`)
-- [ ] Server runs locally (`npm run server`)
-- [ ] Client runs locally (`npm run dev`)
-- [ ] Multiplayer works locally
-- [ ] Deployed to hosting platform
-- [ ] Public URL accessible
-- [ ] WebSocket connection works
-- [ ] All game modes work
-- [ ] HTTPS enabled
-- [ ] Custom domain configured (optional)
+1. **Deploy** - Follow this guide
+2. **Test** - Play with friends
+3. **Gather Feedback** - Ask testers for feedback
+4. **Iterate** - Improve based on feedback
+5. **Scale** - Upgrade hosting if needed
 
 ---
 
-**Your game is ready for deployment! Choose a platform and follow the steps above to get your public link.** 🚀
+**Good luck with your deployment!** 🎮
+
+If you encounter any issues, check the troubleshooting section or open an issue on GitHub.

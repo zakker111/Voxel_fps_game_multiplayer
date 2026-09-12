@@ -25,6 +25,10 @@ export class Player {
   respawnTimer: number = 0;
   targetInfo: string = '';
   team: 'red' | 'blue' = 'blue';
+  
+  // CTF flag system
+  carryingFlag: boolean = false;
+  flagMesh: THREE.Group | null = null;
 
   // Smooth gameplay features
   headBobTime: number = 0;
@@ -114,7 +118,7 @@ export class Player {
 
   die(): void {
     this.isDead = true;
-    this.respawnTimer = 6;
+    this.respawnTimer = 13; // Increased to 13 seconds to match bots
   }
 
   respawn(team: 'red' | 'blue' = 'blue'): void {
@@ -124,12 +128,12 @@ export class Player {
     // Spawn in team spawn zone
     let spawnZ: number;
     if (team === 'blue') {
-      spawnZ = -100 + Math.random() * 15; // BLUE_SPAWN_Z_MIN to BLUE_SPAWN_Z_MAX
+      spawnZ = -100 + Math.random() * 10; // BLUE_SPAWN_Z_MIN to BLUE_SPAWN_Z_MAX
     } else {
-      spawnZ = 85 + Math.random() * 15; // RED_SPAWN_Z_MIN to RED_SPAWN_Z_MAX
+      spawnZ = 90 + Math.random() * 10; // RED_SPAWN_Z_MIN to RED_SPAWN_Z_MAX
     }
     
-    const spawnX = (Math.random() - 0.5) * 80; // SPAWN_X_RANGE
+    const spawnX = (Math.random() - 0.5) * 40; // SPAWN_X_RANGE * 2
     const groundY = this.world.getGroundHeight(spawnX, spawnZ);
     this.position.set(spawnX, groundY, spawnZ);
     this.velocity.set(0, 0, 0);
@@ -137,6 +141,8 @@ export class Player {
     // Face toward enemy team
     this.yaw = team === 'blue' ? Math.PI : 0;
     this.pitch = 0;
+    
+    // Note: Ammo reset is handled by the game class after calling respawn
   }
 
   private isPointInSolid(x: number, y: number, z: number): boolean {
@@ -175,6 +181,19 @@ export class Player {
       for (const [cx, cz] of points) {
         if (this.isPointInSolid(cx, cy, cz)) return true;
       }
+    }
+    return false;
+  }
+
+  // Check if player can step up over a 1-voxel obstacle
+  private canStepUp(currentPos: THREE.Vector3, newPos: THREE.Vector3): boolean {
+    const stepHeight = 1.0; // Can step up 1 voxel
+    const testPos = newPos.clone();
+    testPos.y = currentPos.y + stepHeight;
+    
+    // Check if there's space above the obstacle
+    if (!this.checkCollisionAt(testPos)) {
+      return true;
     }
     return false;
   }
@@ -299,18 +318,28 @@ export class Player {
 
     const newPos = this.position.clone();
 
-    // Move X axis with collision detection
+    // Move X axis with collision detection and step-up
     newPos.x += this.velocity.x * dt;
     if (this.checkCollisionAt(newPos)) {
-      newPos.x = this.position.x;
-      this.velocity.x = 0;
+      // Try to step up over 1-voxel obstacle
+      if (this.isGrounded && this.canStepUp(this.position, newPos)) {
+        newPos.y = this.position.y + 1.0;
+      } else {
+        newPos.x = this.position.x;
+        this.velocity.x = 0;
+      }
     }
 
-    // Move Z axis with collision detection
+    // Move Z axis with collision detection and step-up
     newPos.z += this.velocity.z * dt;
     if (this.checkCollisionAt(newPos)) {
-      newPos.z = this.position.z;
-      this.velocity.z = 0;
+      // Try to step up over 1-voxel obstacle
+      if (this.isGrounded && this.canStepUp(this.position, newPos)) {
+        newPos.y = this.position.y + 1.0;
+      } else {
+        newPos.z = this.position.z;
+        this.velocity.z = 0;
+      }
     }
 
     // Move Y axis with collision detection

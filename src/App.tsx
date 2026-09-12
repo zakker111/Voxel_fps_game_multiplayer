@@ -8,8 +8,9 @@ function App() {
     hp: 100, maxHp: 100, equipment: 'rifle', inventory: 0,
     isDead: false, respawnTimer: 0, hitMarker: false, targetInfo: '',
     message: '', messageTimer: 0, buildMode: false, buildValid: true,
-    blueKills: 0, redKills: 0, isAiming: false,
+    blueKills: 0, redKills: 0, blueCaptures: 0, redCaptures: 0, isAiming: false,
     currentAmmo: 10, magazineSize: 10, isReloading: false,
+    playerCarryingFlag: false, flagCarrierName: '',
   });
   const [started, setStarted] = useState(false);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'singleplayer' | 'online' | null>(null);
@@ -27,27 +28,34 @@ function App() {
       canvas.height = window.innerHeight;
     }
     
-    const game = new Game(canvas, gameMode);
-    game.onStateChange = (state) => setGameState(state);
-    
-    // Set team for online multiplayer
-    if (gameMode === 'online') {
-      game.playerTeam = selectedTeam;
-      game.player.team = selectedTeam;
-    }
-    
-    game.start();
-    gameRef.current = game;
-    console.log('Game created and started');
-    
-    // Auto-start when game is created
-    game.requestPointerLock(canvas);
-    setStarted(true);
+    // Create game after a small delay to ensure canvas is ready
+    setTimeout(() => {
+      if (!canvasRef.current || gameRef.current) return;
+      
+      const game = new Game(canvasRef.current, gameMode);
+      game.onStateChange = (state) => setGameState(state);
+      
+      // Set team for online multiplayer
+      if (gameMode === 'online') {
+        game.playerTeam = selectedTeam;
+        game.player.team = selectedTeam;
+      }
+      
+      game.start();
+      gameRef.current = game;
+      console.log('Game created and started');
+      
+      // Auto-start when game is created
+      game.requestPointerLock(canvasRef.current);
+      setStarted(true);
+    }, 100);
     
     return () => { 
       console.log('Cleaning up game');
-      game.destroy(); 
-      gameRef.current = null;
+      if (gameRef.current) {
+        gameRef.current.destroy(); 
+        gameRef.current = null;
+      }
     };
   }, [gameMode, selectedTeam]);
 
@@ -168,16 +176,45 @@ function App() {
           {/* Scoreboard - only in multiplayer */}
           {(gameMode === 'multiplayer' || gameMode === 'online') && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
-              <div className="flex items-center bg-gray-900/90 rounded-xl overflow-hidden border-2 border-gray-700">
-                <div className="px-5 py-2 bg-blue-900/40 flex items-center gap-2">
-                  <span className="text-blue-300 font-bold text-sm">BLUE</span>
-                  <span className="text-white font-bold text-xl">{gameState.blueKills}</span>
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex items-center bg-gray-900/90 rounded-xl overflow-hidden border-2 border-gray-700">
+                  <div className="px-5 py-2 bg-blue-900/40 flex flex-col items-center gap-1">
+                    <span className="text-blue-300 font-bold text-sm">BLUE</span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex flex-col items-center">
+                        <span className="text-gray-400 text-xs">Kills</span>
+                        <span className="text-white font-bold text-xl">{gameState.blueKills}</span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-gray-400 text-xs">Flags</span>
+                        <span className="text-yellow-400 font-bold text-xl">{gameState.blueCaptures}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="px-3 py-2 text-gray-500 font-bold">VS</div>
+                  <div className="px-5 py-2 bg-red-900/40 flex flex-col items-center gap-1">
+                    <span className="text-red-300 font-bold text-sm">RED</span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex flex-col items-center">
+                        <span className="text-gray-400 text-xs">Kills</span>
+                        <span className="text-white font-bold text-xl">{gameState.redKills}</span>
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-gray-400 text-xs">Flags</span>
+                        <span className="text-yellow-400 font-bold text-xl">{gameState.redCaptures}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="px-3 py-2 text-gray-500 font-bold">VS</div>
-                <div className="px-5 py-2 bg-red-900/40 flex items-center gap-2">
-                  <span className="text-white font-bold text-xl">{gameState.redKills}</span>
-                  <span className="text-red-300 font-bold text-sm">RED</span>
-                </div>
+                
+                {/* Flag carrier indicator */}
+                {gameState.flagCarrierName && (
+                  <div className="bg-yellow-900/90 px-4 py-2 rounded-lg border-2 border-yellow-500 animate-pulse">
+                    <span className="text-yellow-300 font-bold text-sm">
+                      🚩 Flag Carrier: {gameState.flagCarrierName}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}
