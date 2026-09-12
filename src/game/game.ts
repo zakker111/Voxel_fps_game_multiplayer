@@ -476,6 +476,11 @@ export class Game {
             if (this.redFlagMesh) this.redFlagMesh.visible = false;
           }
           this.showMessage(`🚩 ${this.playerTeam.toUpperCase()} picked up the enemy flag!`);
+          
+          // Send flag pickup to server in multiplayer
+          if (this.gameMode === 'online' && this.networkClient) {
+            this.networkClient.send({ type: 'pickupFlag' });
+          }
         }
       }
       
@@ -497,6 +502,11 @@ export class Game {
             (droppedFlag.mesh.material as THREE.Material).dispose();
             this.droppedFlags.splice(i, 1);
             this.showMessage(`🚩 ${this.playerTeam.toUpperCase()} picked up the dropped flag!`);
+            
+            // Send flag pickup to server in multiplayer
+            if (this.gameMode === 'online' && this.networkClient) {
+              this.networkClient.send({ type: 'pickupFlag' });
+            }
           }
         }
       }
@@ -3374,6 +3384,45 @@ export class Game {
       this.sounds.capture();
     });
 
+    this.networkClient.onMessage('flagPickedUp', (msg) => {
+      // Update flag state from server
+      if (msg.flagTeam === 'blue') {
+        this.blueFlagAtBase = false;
+        if (this.blueFlagMesh) this.blueFlagMesh.visible = false;
+      } else {
+        this.redFlagAtBase = false;
+        if (this.redFlagMesh) this.redFlagMesh.visible = false;
+      }
+      
+      // Show message
+      const carrierName = msg.playerId === this.localPlayerId ? 'You' : 'A player';
+      this.showMessage(`🚩 ${carrierName} picked up the ${msg.flagTeam.toUpperCase()} flag!`);
+    });
+
+    this.networkClient.onMessage('flagDropped', (msg) => {
+      // Create dropped flag visual
+      this.createDroppedFlag(new THREE.Vector3(msg.position.x, msg.position.y, msg.position.z), msg.flagTeam);
+      this.showMessage(`💀 ${msg.flagTeam.toUpperCase()} flag dropped!`);
+    });
+
+    this.networkClient.onMessage('flagReturned', (msg) => {
+      // Return flag to base
+      if (msg.flagTeam === 'blue') {
+        this.blueFlagAtBase = true;
+        if (this.blueFlagMesh) {
+          this.blueFlagMesh.visible = true;
+          this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, BLUE_FLAG_POS.z);
+        }
+      } else {
+        this.redFlagAtBase = true;
+        if (this.redFlagMesh) {
+          this.redFlagMesh.visible = true;
+          this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getOriginalGroundLevel() + 1, RED_FLAG_POS.z);
+        }
+      }
+      this.showMessage(`🚩 ${msg.flagTeam.toUpperCase()} flag returned to base!`);
+    });
+
     // Connect to server
     this.networkClient.connect().catch((error) => {
       console.error('Failed to connect to server:', error);
@@ -3404,9 +3453,34 @@ export class Game {
       return;
     }
 
+    // Update carrying flag state
+    const wasCarryingFlag = remotePlayer.state.carryingFlag || false;
+    const isCarryingFlag = state.carryingFlag || false;
+    
     remotePlayer.state = state;
     remotePlayer.targetPosition.set(state.position.x, state.position.y, state.position.z);
     remotePlayer.targetRotation.set(0, state.rotation.yaw, 0);
+    
+    // Update flag mesh visibility
+    if (isCarryingFlag && !wasCarryingFlag) {
+      // Player just picked up flag - create flag mesh
+      const enemyTeam = state.team === 'blue' ? 'red' : 'blue';
+      const flagMesh = this.createCarriedFlagMesh(enemyTeam as 'red' | 'blue');
+      flagMesh.position.set(0.5, 1.5, 0);
+      remotePlayer.mesh.add(flagMesh);
+      (remotePlayer as any).flagMesh = flagMesh;
+    } else if (!isCarryingFlag && wasCarryingFlag) {
+      // Player just dropped flag - remove flag mesh
+      if ((remotePlayer as any).flagMesh) {
+        remotePlayer.mesh.remove((remotePlayer as any).flagMesh);
+        (remotePlayer as any).flagMesh = null;
+      }
+    }
+    
+    // Update flag position if carrying
+    if (isCarryingFlag && (remotePlayer as any).flagMesh) {
+      (remotePlayer as any).flagMesh.position.set(0.5, 1.5, 0);
+    }
   }
 
   private removeRemotePlayer(playerId: string): void {

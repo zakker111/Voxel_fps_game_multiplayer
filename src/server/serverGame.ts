@@ -25,6 +25,13 @@ export class ServerGame {
   private readonly BLUE_FLAG_POS = { x: 0, z: -80 };
   private readonly RED_FLAG_POS = { x: 0, z: 80 };
   private readonly CAPTURE_DISTANCE = 3;
+  
+  // Flag state tracking
+  private blueFlagAtBase: boolean = true;
+  private redFlagAtBase: boolean = true;
+  private blueFlagCarrier: string | null = null; // Player ID carrying blue flag
+  private redFlagCarrier: string | null = null; // Player ID carrying red flag
+  private droppedFlags: Array<{ position: Position; team: 'red' | 'blue'; respawnTimer: number }> = [];
 
   constructor() {
     this.world = new ServerWorld();
@@ -116,6 +123,10 @@ export class ServerGame {
         }
         break;
 
+      case 'pickupFlag':
+        this.handleFlagPickup(playerId);
+        break;
+
       case 'disconnect':
         this.removePlayer(playerId);
         break;
@@ -186,6 +197,9 @@ export class ServerGame {
         });
         
         if (target.isDead) {
+          // Handle flag drop
+          this.handlePlayerDeath(targetId);
+          
           if (player.team === 'red') {
             this.scores.red++;
           } else {
@@ -350,14 +364,148 @@ export class ServerGame {
     }
   }
 
+  private handleFlagPickup(playerId: string): void {
+    const player = this.players.get(playerId);
+    if (!player || player.isDead) return;
+
+    // Check if player is already carrying a flag
+    if (this.blueFlagCarrier === playerId || this.redFlagCarrier === playerId) {
+      return;
+    }
+
+    // Check if player is near enemy flag at base
+    const enemyFlagPos = player.team === 'blue' ? this.RED_FLAG_POS : this.BLUE_FLAG_POS;
+    const dx = player.position.x - enemyFlagPos.x;
+    const dz = player.position.z - enemyFlagPos.z;
+    const distance = Math.sqrt(dx * dx + dz * dz);
+
+    if (distance < this.CAPTURE_DISTANCE) {
+      // Check if flag is at base
+      if (player.team === 'blue' && this.redFlagAtBase) {
+        this.redFlagAtBase = false;
+        this.redFlagCarrier = playerId;
+        player.carryingFlag = true;
+        
+        this.broadcast({
+          type: 'flagPickedUp',
+          playerId: playerId,
+          flagTeam: 'red',
+        });
+      } else if (player.team === 'red' && this.blueFlagAtBase) {
+        this.blueFlagAtBase = false;
+        this.blueFlagCarrier = playerId;
+        player.carryingFlag = true;
+        
+        this.broadcast({
+          type: 'flagPickedUp',
+          playerId: playerId,
+          flagTeam: 'blue',
+        });
+      }
+    }
+
+    // Check if player is near dropped enemy flag
+    const enemyFlagTeam = player.team === 'blue' ? 'red' : 'blue';
+    for (let i = this.droppedFlags.length - 1; i >= 0; i--) {
+      const droppedFlag = this.droppedFlags[i];
+      if (droppedFlag.team === enemyFlagTeam) {
+        const dx = player.position.x - droppedFlag.position.x;
+        const dz = player.position.z - droppedFlag.position.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        
+        if (distance < 2) {
+          // Pick up dropped flag
+          this.droppedFlags.splice(i, 1);
+          
+          if (enemyFlagTeam === 'red') {
+            this.redFlagCarrier = playerId;
+          } else {
+            this.blueFlagCarrier = playerId;
+          }
+          player.carryingFlag = true;
+          
+          this.broadcast({
+            type: 'flagPickedUp',
+            playerId: playerId,
+            flagTeam: enemyFlagTeam,
+          });
+        }
+      }
+    }
+  }
+
+  private handlePlayerDeath(playerId: string): void {
+    const player = this.players.get(playerId);
+    if (!player) return;
+
+    // Drop flag if carrying
+    if (player.carryingFlag) {
+      player.carryingFlag = false;
+      
+      if (this.blueFlagCarrier === playerId) {
+        this.blueFlagCarrier = null;
+        this.droppedFlags.push({
+          position: { ...player.position },
+          team: 'blue',
+          respawnTimer: 60,
+        });
+        
+        this.broadcast({
+          type: 'flagDropped',
+          position: { ...player.position },
+          flagTeam: 'blue',
+        });
+      } else if (this.redFlagCarrier === playerId) {
+        this.redFlagCarrier = null;
+        this.droppedFlags.push({
+          position: { ...player.position },
+          team: 'red',
+          respawnTimer: 60,
+        });
+        
+        this.broadcast({
+          type: 'flagDropped',
+          position: { ...player.position },
+          flagTeam: 'red',
+        });
+      }
+    }
+  }
+
   update(dt: number): void {
     // Update all players
     for (const player of this.players.values()) {
       player.update(dt, this.world);
     }
     
+    // Update dropped flag timers
+    this.updateDroppedFlags(dt);
+    
     // Check for flag captures
     this.checkFlagCaptures();
+  }
+  
+  private updateDroppedFlags(dt: number): void {
+    for (let i = this.droppedFlags.length - 1; i >= 0; i--) {
+      const droppedFlag = this.droppedFlags[i];
+      droppedFlag.respawnTimer -= dt;
+      
+      if (droppedFlag.respawnTimer <= 0) {
+        // Return flag to base
+        this.droppedFlags.splice(i, 1);
+        
+        if (droppedFlag.team === 'blue') {
+          this.blueFlagAtBase = true;
+        } else {
+          this.redFlagAtBase = true;
+        }
+        
+        this.broadcast({
+          type: 'flagReturned',
+          flagTeam: droppedFlag.team,
+        });
+      }
+    }
   }
   
   private checkFlagCaptures(): void {

@@ -1,9 +1,26 @@
 # Voxel FPS - Multiplayer Setup Guide
 
-**Version:** 1.0.7  
+**Version:** 1.0.8  
 **Last Updated:** 2026-09-08
 
-A multiplayer voxel-based first-person shooter with capture-the-flag gameplay and immersive spatial audio.
+A multiplayer voxel-based first-person shooter with capture-the-flag gameplay, immersive spatial audio, and complete multiplayer flag system.
+
+## 🎯 Latest Updates (v1.0.8)
+
+### ✅ Complete Multiplayer Flag System
+- **Server-Authoritative Design** - Server validates all flag actions
+- **Flag Pickup** - Players can pick up enemy flags at base or dropped flags
+- **Flag Drop** - Flags drop when carrier dies, stay for 60 seconds
+- **Flag Capture** - Bring enemy flag to own base for scoring
+- **Flag Return** - Dropped flags return to base after 60 seconds
+- **Full Synchronization** - All clients see same flag state
+- **Visual Feedback** - Flag meshes on carriers, dropped flags, base flags
+
+### ✅ Bot vs Multiplayer Parity
+- Same flag behavior in bot battles and multiplayer
+- Same visual feedback across all modes
+- Same state tracking and synchronization
+- Consistent experience across all game modes
 
 ## 🎮 Game Modes
 

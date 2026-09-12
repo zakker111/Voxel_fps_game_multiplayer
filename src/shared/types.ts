@@ -28,6 +28,7 @@ export interface PlayerState {
   magazineSize?: number;
   isReloading?: boolean;
   aimTransition?: number; // 0-1 for smooth aiming animation
+  carryingFlag?: boolean; // Is player carrying enemy flag?
 }
 
 export interface VoxelChange {
@@ -52,6 +53,7 @@ export type ClientMessage =
   | { type: 'useTool'; tool: 'pickaxe' | 'spade'; target: Position }
   | { type: 'build'; position: Position }
   | { type: 'reload' }
+  | { type: 'pickupFlag' }
   | { type: 'disconnect' };
 
 export interface PlayerInput {
@@ -77,7 +79,10 @@ export type ServerMessage =
   | { type: 'playerRespawned'; playerId: string; position: Position }
   | { type: 'hitConfirmed'; targetId: string; damage: number; isHeadshot: boolean }
   | { type: 'inventoryUpdated'; inventory: number }
-  | { type: 'flagCaptured'; team: 'red' | 'blue'; playerId: string; captures: { red: number; blue: number } };
+  | { type: 'flagCaptured'; team: 'red' | 'blue'; playerId: string; captures: { red: number; blue: number } }
+  | { type: 'flagPickedUp'; playerId: string; flagTeam: 'red' | 'blue' }
+  | { type: 'flagDropped'; position: Position; flagTeam: 'red' | 'blue' }
+  | { type: 'flagReturned'; flagTeam: 'red' | 'blue' };
 
 export interface GameState {
   players: Map<string, PlayerState>;
