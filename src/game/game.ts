@@ -224,7 +224,8 @@ export class Game {
   };
 
   constructor(canvas: HTMLCanvasElement, mode: GameMode = 'multiplayer') {
-    console.log('Game constructor started');
+    try {
+      console.log('Game constructor started');
     this.canvas = canvas;
     this.clock = new THREE.Clock();
     this.sounds = new SoundManager();
@@ -620,10 +621,10 @@ export class Game {
   }
 
   private initializeNetwork(): void {
-    this.networkClient = new NetworkClient('ws://localhost:3000');
+    this.networkClient = new NetworkClient();
     this.networkClient.onConnect(() => {
       this.showMessage('Connected to server!');
-      this.networkClient!.sendJoin('blue');
+      this.networkClient!.sendJoin(this.playerTeam);
     });
     this.networkClient.connect().catch(() => {
       this.showMessage('Failed to connect to server');

@@ -10,8 +10,15 @@ export class NetworkClient {
   private onConnectCallback: (() => void) | null = null;
   private onDisconnectCallback: (() => void) | null = null;
 
-  constructor(serverUrl: string = 'ws://localhost:3000') {
-    this.serverUrl = serverUrl;
+  constructor(serverUrl?: string) {
+    if (serverUrl) {
+      this.serverUrl = serverUrl;
+    } else if (typeof window !== 'undefined') {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this.serverUrl = `${protocol}//${window.location.host}`;
+    } else {
+      this.serverUrl = 'ws://localhost:3000';
+    }
   }
 
   connect(): Promise<void> {
