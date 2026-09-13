@@ -272,13 +272,13 @@ function App() {
                 <div className="text-gray-400 text-xs mb-1">Ammo</div>
                 <div className="flex items-baseline gap-2">
                   <span className={`text-2xl font-bold ${
-                    gameState.currentAmmo === 0 ? 'text-red-500' : 
-                    gameState.currentAmmo < gameState.magazineSize * 0.3 ? 'text-yellow-500' : 
+                    (gameState.currentAmmo ?? 0) === 0 ? 'text-red-500' : 
+                    (gameState.currentAmmo ?? 0) < (gameState.magazineSize ?? 10) * 0.3 ? 'text-yellow-500' : 
                     'text-white'
                   }`}>
-                    {gameState.currentAmmo}
+                    {gameState.currentAmmo ?? 0}
                   </span>
-                  <span className="text-gray-500 text-sm">/ {gameState.magazineSize}</span>
+                  <span className="text-gray-500 text-sm">/ {gameState.magazineSize ?? 0}</span>
                 </div>
                 {gameState.isReloading && (
                   <div className="text-xs text-yellow-500 mt-1 animate-pulse">

@@ -45,9 +45,14 @@ interface Bot {
   targetPos: THREE.Vector3;
   moveTimer: number;
   shootTimer: number;
+  burstRemaining: number;
+  burstTimer: number;
   headY: number;
   grounded: boolean;
   team: Team;
+  name: string;
+  role: 'attacker' | 'defender';
+  laneOffset: number;
   nameTag: THREE.Sprite;
   isCrouching: boolean;
   crouchTimer: number;
@@ -71,6 +76,18 @@ interface Bot {
   lookAroundTimer: number;
   lookAroundTarget: number;
   walkCycle: number;
+}
+
+interface Flag {
+  team: Team;
+  basePos: { x: number; z: number };
+  currentPos: THREE.Vector3;
+  carrier: { isPlayer: boolean; bot?: Bot; name: string } | null;
+  isDropped: boolean;
+  dropTimer: number;
+  mesh: THREE.Group;
+  clothMesh: THREE.Mesh;
+  light: THREE.PointLight;
 }
 
 interface Weapon {
@@ -179,20 +196,9 @@ export class Game {
     maxLife: number;
   }> = [];
 
-  blueFlagMesh: THREE.Mesh | null = null;
-  redFlagMesh: THREE.Mesh | null = null;
-  blueFlagAtBase: boolean = true;
-  redFlagAtBase: boolean = true;
-  droppedFlags: Array<{ mesh: THREE.Mesh; position: THREE.Vector3; team: Team; respawnTimer: number }> = [];
+  blueFlag!: Flag;
+  redFlag!: Flag;
   captureZoneSize: number = 4;
-
-  private lastFlagCheckTime: number = 0;
-  private flagCheckInterval: number = 0.1;
-
-  private lastBotUpdateTime: number = 0;
-  private botUpdateInterval: number = 0.05;
-  private currentBotUpdateIndex: number = 0;
-  private botsPerBatch: number = 4;
 
   gameMode: GameMode = 'multiplayer';
 
@@ -219,6 +225,16 @@ export class Game {
     smg: {
       fireRate: 0.1, lastFired: 0, damage: { head: 100, body: 34 }, spread: 0.04,
       name: 'SMG', magazineSize: 30, currentAmmo: 30, reloadTime: 1.5,
+      isReloading: false, reloadStartTime: 0
+    },
+    spade: {
+      fireRate: 0.5, lastFired: 0, damage: { head: 40, body: 25 }, spread: 0,
+      name: 'Spade', magazineSize: 0, currentAmmo: 0, reloadTime: 0,
+      isReloading: false, reloadStartTime: 0
+    },
+    pickaxe: {
+      fireRate: 0.5, lastFired: 0, damage: { head: 40, body: 25 }, spread: 0,
+      name: 'Pickaxe', magazineSize: 0, currentAmmo: 0, reloadTime: 0,
       isReloading: false, reloadStartTime: 0
     },
   };
@@ -452,6 +468,9 @@ export class Game {
   private switchWeaponModel(type: EquipmentType): void {
     this.isReloadAnimating = false;
     this.reloadAnimationTime = 0;
+    for (const key of Object.keys(this.weapons)) {
+      this.weapons[key].isReloading = false;
+    }
     if (this.currentWeaponModel) {
       this.weaponContainer.remove(this.currentWeaponModel);
     }
@@ -465,21 +484,203 @@ export class Game {
   }
 
   private createFlags(): void {
-    const blueFlagGeo = new THREE.CylinderGeometry(0.1, 0.1, 2, 8);
-    const blueFlagMat = new THREE.MeshLambertMaterial({ color: 0x4488ff });
-    this.blueFlagMesh = new THREE.Mesh(blueFlagGeo, blueFlagMat);
-    this.blueFlagMesh.position.set(BLUE_FLAG_POS.x, this.world.getGroundHeight(BLUE_FLAG_POS.x, BLUE_FLAG_POS.z) + 1, BLUE_FLAG_POS.z);
-    this.scene.add(this.blueFlagMesh);
+    this.blueFlag = this.createFlagObject('blue', BLUE_FLAG_POS);
+    this.redFlag = this.createFlagObject('red', RED_FLAG_POS);
+  }
 
-    const redFlagGeo = new THREE.CylinderGeometry(0.1, 0.1, 2, 8);
-    const redFlagMat = new THREE.MeshLambertMaterial({ color: 0xff4444 });
-    this.redFlagMesh = new THREE.Mesh(redFlagGeo, redFlagMat);
-    this.redFlagMesh.position.set(RED_FLAG_POS.x, this.world.getGroundHeight(RED_FLAG_POS.x, RED_FLAG_POS.z) + 1, RED_FLAG_POS.z);
-    this.scene.add(this.redFlagMesh);
+  private createFlagObject(team: Team, pos: { x: number; z: number }): Flag {
+    const group = new THREE.Group();
+    const gY = this.world.getGroundHeight(pos.x, pos.z);
+    group.position.set(pos.x, gY, pos.z);
+
+    // Flagpole
+    const poleGeo = new THREE.CylinderGeometry(0.06, 0.08, 4, 8);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.3, metalness: 0.7 });
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.y = 2;
+    group.add(pole);
+
+    // Base pedestal
+    const baseGeo = new THREE.CylinderGeometry(0.6, 0.8, 0.3, 12);
+    const baseMat = new THREE.MeshStandardMaterial({ color: team === 'blue' ? 0x224488 : 0x882222 });
+    const pedestal = new THREE.Mesh(baseGeo, baseMat);
+    pedestal.position.y = 0.15;
+    group.add(pedestal);
+
+    // Flag banner cloth
+    const flagColor = team === 'blue' ? 0x2277ff : 0xff2233;
+    const clothGeo = new THREE.BoxGeometry(1.6, 0.9, 0.06);
+    const clothMat = new THREE.MeshLambertMaterial({ color: flagColor });
+    const cloth = new THREE.Mesh(clothGeo, clothMat);
+    cloth.position.set(0.85, 3.3, 0);
+    group.add(cloth);
+
+    // Glowing sphere beacon on top
+    const sphereGeo = new THREE.SphereGeometry(0.2, 12, 12);
+    const sphereMat = new THREE.MeshBasicMaterial({ color: team === 'blue' ? 0x66aaff : 0xff6666 });
+    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+    sphere.position.y = 4.0;
+    group.add(sphere);
+
+    // Beacon point light for visibility across the battlefield
+    const lightColor = team === 'blue' ? 0x4488ff : 0xff4444;
+    const light = new THREE.PointLight(lightColor, 3, 22);
+    light.position.y = 4.0;
+    group.add(light);
+
+    // Label sprite
+    const labelSprite = this.createNameTag(team, team === 'blue' ? 'BLUE FLAG' : 'RED FLAG');
+    labelSprite.position.set(0, 4.6, 0);
+    labelSprite.scale.set(2.4, 0.6, 1);
+    group.add(labelSprite);
+
+    this.scene.add(group);
+
+    return {
+      team,
+      basePos: { ...pos },
+      currentPos: new THREE.Vector3(pos.x, gY, pos.z),
+      carrier: null,
+      isDropped: false,
+      dropTimer: 0,
+      mesh: group,
+      clothMesh: cloth,
+      light
+    };
+  }
+
+  private resetFlagToBase(flag: Flag): void {
+    const gY = this.world.getGroundHeight(flag.basePos.x, flag.basePos.z);
+    flag.currentPos.set(flag.basePos.x, gY, flag.basePos.z);
+    flag.mesh.position.copy(flag.currentPos);
+    flag.carrier = null;
+    flag.isDropped = false;
+    flag.dropTimer = 0;
+  }
+
+  private updateFlags(dt: number): void {
+    const flags = [this.blueFlag, this.redFlag];
+
+    for (const flag of flags) {
+      if (flag.carrier) {
+        // Flag is currently carried
+        const carrier = flag.carrier;
+        let carrierPos: THREE.Vector3 | null = null;
+        let carrierDead = false;
+        let carrierTeam: Team;
+
+        if (carrier.isPlayer) {
+          carrierDead = this.player.isDead;
+          carrierPos = this.player.position;
+          carrierTeam = this.playerTeam;
+        } else if (carrier.bot) {
+          carrierDead = carrier.bot.isDead;
+          carrierPos = carrier.bot.position;
+          carrierTeam = carrier.bot.team;
+        }
+
+        if (carrierDead || !carrierPos) {
+          // Carrier died: drop flag at location
+          flag.carrier = null;
+          flag.isDropped = true;
+          flag.dropTimer = 30; // 30 seconds before auto-return
+          if (carrier.isPlayer) this.player.carryingFlag = false;
+          if (carrier.bot) carrier.bot.carryingFlag = false;
+          this.showMessage(`🚩 ${flag.team.toUpperCase()} flag was dropped!`);
+        } else {
+          // Carrier is alive: attach flag to carrier
+          flag.currentPos.set(carrierPos.x, carrierPos.y + 0.8, carrierPos.z);
+          flag.mesh.position.copy(flag.currentPos);
+          if (carrier.isPlayer) this.player.carryingFlag = true;
+          if (carrier.bot) carrier.bot.carryingFlag = true;
+
+          // Check if carrier reached their home base!
+          const homeBase = carrierTeam! === 'blue' ? BLUE_FLAG_POS : RED_FLAG_POS;
+          const distToHome = Math.hypot(carrierPos.x - homeBase.x, carrierPos.z - homeBase.z);
+
+          if (distToHome < 5) {
+            // CAPTURE!
+            if (carrierTeam! === 'blue') {
+              this.blueCaptures++;
+              this.showMessage(`🎉 BLUE TEAM (${carrier.name}) CAPTURED THE RED FLAG!`);
+            } else {
+              this.redCaptures++;
+              this.showMessage(`🚩 RED TEAM (${carrier.name}) CAPTURED THE BLUE FLAG!`);
+            }
+
+            this.sounds.capture();
+            if (carrier.isPlayer) this.player.carryingFlag = false;
+            if (carrier.bot) carrier.bot.carryingFlag = false;
+
+            this.resetFlagToBase(flag);
+          }
+        }
+      } else {
+        // Flag is at base or dropped
+        flag.mesh.position.copy(flag.currentPos);
+        flag.clothMesh.rotation.y = Math.sin(performance.now() * 0.003) * 0.3;
+
+        if (flag.isDropped) {
+          flag.dropTimer -= dt;
+          flag.light.intensity = 2 + Math.sin(performance.now() * 0.01) * 1.5; // pulsing glow
+          if (flag.dropTimer <= 0) {
+            this.resetFlagToBase(flag);
+            this.showMessage(`🏳️ ${flag.team.toUpperCase()} flag returned to base`);
+          }
+        } else {
+          flag.light.intensity = 3;
+        }
+
+        // Check if local player picks it up
+        if (!this.player.isDead) {
+          const distToPlayer = Math.hypot(this.player.position.x - flag.currentPos.x, this.player.position.z - flag.currentPos.z);
+          if (distToPlayer < 3.5 && Math.abs(this.player.position.y - flag.currentPos.y) < 3.5) {
+            if (this.playerTeam !== flag.team) {
+              // Enemy flag - pick it up!
+              flag.carrier = { isPlayer: true, name: 'You' };
+              flag.isDropped = false;
+              this.player.carryingFlag = true;
+              this.sounds.capture();
+              this.showMessage(`🚩 YOU TOOK THE ${flag.team.toUpperCase()} FLAG! Bring it to base!`);
+            } else if (flag.isDropped) {
+              // Friendly dropped flag - return it to base!
+              this.resetFlagToBase(flag);
+              this.sounds.respawn();
+              this.showMessage(`🛡️ YOU RETURNED THE ${flag.team.toUpperCase()} FLAG TO BASE!`);
+            }
+          }
+        }
+
+        // Check if a bot picks it up
+        if (!flag.carrier) {
+          for (const bot of this.bots) {
+            if (bot.isDead || bot.carryingFlag) continue;
+            const distToBot = Math.hypot(bot.position.x - flag.currentPos.x, bot.position.z - flag.currentPos.z);
+            if (distToBot < 3.5 && Math.abs(bot.position.y - flag.currentPos.y) < 3.5) {
+              if (bot.team !== flag.team) {
+                // Enemy bot picks up flag!
+                flag.carrier = { isPlayer: false, bot, name: bot.name };
+                flag.isDropped = false;
+                bot.carryingFlag = true;
+                this.sounds.weaponSwitch();
+                this.showMessage(`🚩 ${bot.name} (${bot.team.toUpperCase()}) took the ${flag.team.toUpperCase()} flag!`);
+                break;
+              } else if (flag.isDropped) {
+                // Friendly bot returns dropped flag!
+                this.resetFlagToBase(flag);
+                this.sounds.respawn();
+                this.showMessage(`🛡️ ${bot.name} returned the ${flag.team.toUpperCase()} flag!`);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   private createCaptureZones(): void {
-    // Capture zones are visual only
+    // Capture zones handled in updateFlags
   }
 
   private spawnTeamBots(team: Team, count: number): void {
@@ -489,9 +690,14 @@ export class Game {
       botMesh.position.copy(pos);
       this.scene.add(botMesh);
 
-      const nameTag = this.createNameTag(team, `Bot${i}`);
+      const botName = `${team === 'blue' ? 'Blue' : 'Red'} Bot ${i + 1}`;
+      const nameTag = this.createNameTag(team, botName);
       nameTag.position.y = 2.6;
       botMesh.add(nameTag);
+
+      // 70% attackers (rush enemy flag), 30% defenders (patrol base)
+      const role: 'attacker' | 'defender' = (i === 0 || i === 1) ? 'defender' : 'attacker';
+      const laneOffset = ((i % 3) - 1) * 8 + (Math.random() - 0.5) * 4;
 
       this.bots.push({
         mesh: botMesh,
@@ -500,16 +706,20 @@ export class Game {
         hp: 100, maxHp: 100,
         isDead: false, respawnTimer: 0,
         targetPos: pos.clone(),
-        moveTimer: 2 + Math.random() * 3,
-        shootTimer: 2 + Math.random() * 3,
+        moveTimer: 1 + Math.random() * 2,
+        shootTimer: 1 + Math.random() * 2,
+        burstRemaining: 0,
+        burstTimer: 0,
         headY: 1.8, grounded: false,
-        team, nameTag,
+        team, name: botName, role, laneOffset,
+        nameTag,
         isCrouching: false, crouchTimer: 0,
-        behaviorState: 'patrol', behaviorTimer: 3 + Math.random() * 4,
+        behaviorState: role === 'attacker' ? 'rushFlag' : 'defend',
+        behaviorTimer: 2 + Math.random() * 3,
         strafeDirection: Math.random() > 0.5 ? 1 : -1,
         stuckTimer: 0, lastPos: pos.clone(),
-        jumpCooldown: 0, skill: 0.5 + Math.random() * 0.5,
-        aggression: 0.4 + Math.random() * 0.6,
+        jumpCooldown: 0, skill: 0.6 + Math.random() * 0.4,
+        aggression: 0.5 + Math.random() * 0.5,
         lastDamageTime: 0, dodgeTimer: 0, coverTimer: 0,
         weapon: Math.random() > 0.5 ? 'rifle' : 'smg',
         weaponMesh: null,
@@ -701,8 +911,13 @@ export class Game {
 
   private shoot(now: number): void {
     const weapon = this.weapons[this.equipment];
+    if (!weapon || weapon.magazineSize === 0) return;
+    if (weapon.isReloading) return;
     if (now - weapon.lastFired < weapon.fireRate) return;
-    if (weapon.currentAmmo <= 0) return;
+    if (weapon.currentAmmo <= 0) {
+      this.startReload();
+      return;
+    }
     weapon.lastFired = now;
     weapon.currentAmmo--;
 
@@ -721,6 +936,7 @@ export class Game {
     }
 
     const hit = this.world.raycast(muzzlePos, dir, 100);
+    const voxelDist = hit ? hit.distance : 100;
     if (hit) {
       const voxel = this.world.getVoxel(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z);
       if (voxel) {
@@ -731,26 +947,34 @@ export class Game {
       }
     }
 
+    // Check hit on enemy bots with realistic hitbox (head and body)
     for (const bot of this.bots) {
       if (bot.isDead || bot.team === this.playerTeam) continue;
-      const dist = this.player.position.distanceTo(bot.position);
-      if (dist < 50) {
-        const toBot = bot.position.clone().sub(this.player.position);
-        const dot = toBot.dot(dir);
-        if (dot > 0 && dot < 50) {
-          const closest = this.player.position.clone().add(dir.clone().multiplyScalar(dot));
-          const distToBot = closest.distanceTo(bot.position);
-          if (distToBot < 1) {
-            bot.hp -= 34;
-            this.hitMarkerTimer = 0.2;
-            this.sounds.hitMarker();
-            if (bot.hp <= 0) {
-              bot.isDead = true;
-              bot.mesh.visible = false;
-              this.blueKills++;
-              this.sounds.killSound();
-            }
+      const toBot = bot.position.clone().sub(this.player.position);
+      const dot = toBot.dot(dir);
+      if (dot > 0 && dot < 60 && dot < voxelDist) {
+        const closestPoint = this.player.position.clone().add(dir.clone().multiplyScalar(dot));
+        const horizontalDist = Math.hypot(closestPoint.x - bot.position.x, closestPoint.z - bot.position.z);
+        const verticalDist = closestPoint.y - bot.position.y;
+
+        // Bot hitbox: horizontal radius 0.65m, vertical height 0 to 2.1m
+        if (horizontalDist < 0.65 && verticalDist >= 0 && verticalDist <= 2.1) {
+          const isHeadshot = verticalDist >= 1.5;
+          const damage = isHeadshot ? weapon.damage.head : weapon.damage.body;
+
+          bot.hp -= damage;
+          this.hitMarkerTimer = 0.2;
+          this.sounds.hitMarker();
+
+          if (bot.hp <= 0) {
+            bot.isDead = true;
+            bot.mesh.visible = false;
+            bot.respawnTimer = 6;
+            if (this.playerTeam === 'blue') this.blueKills++; else this.redKills++;
+            this.sounds.killSound();
+            this.showMessage(`🎯 You killed ${bot.name} ${isHeadshot ? '(HEADSHOT!)' : ''}`);
           }
+          break; // Bullet hit target
         }
       }
     }
@@ -811,11 +1035,13 @@ export class Game {
 
   private startReload(): void {
     const weapon = this.weapons[this.equipment];
-    if (weapon.isReloading || weapon.currentAmmo === weapon.magazineSize) return;
+    if (!weapon || weapon.magazineSize === 0 || weapon.isReloading || weapon.currentAmmo === weapon.magazineSize) return;
     weapon.isReloading = true;
     weapon.reloadStartTime = performance.now() / 1000;
     this.isReloadAnimating = true;
     this.reloadAnimationTime = 0;
+    this.reloadAnimationDuration = weapon.reloadTime;
+    this.sounds.reload();
   }
 
   private createMuzzleFlash(position: THREE.Vector3, direction: THREE.Vector3): void {
@@ -882,6 +1108,38 @@ export class Game {
     this.player.update(dt);
     this.world.update();
 
+    // Handle player death respawn timer
+    if (this.player.isDead) {
+      this.player.respawnTimer -= dt;
+      if (this.player.respawnTimer <= 0) {
+        this.player.respawn(this.playerTeam);
+        // Reset weapon magazines
+        for (const key of Object.keys(this.weapons)) {
+          const w = this.weapons[key];
+          if (w && w.magazineSize > 0) {
+            w.currentAmmo = w.magazineSize;
+            w.isReloading = false;
+          }
+        }
+        this.isReloadAnimating = false;
+        this.sounds.respawn();
+      }
+    }
+
+    // Continuous fire for SMG and tools while holding mouse button
+    if (this.isMouseDown && !this.player.isDead) {
+      if (this.equipment === 'smg' || this.equipment === 'pickaxe' || this.equipment === 'spade') {
+        this.performAction();
+      }
+    }
+
+    // ADS camera zoom
+    const targetFov = this.isAiming ? (this.equipment === 'rifle' ? 45 : 55) : 75;
+    if (Math.abs(this.player.camera.fov - targetFov) > 0.1) {
+      this.player.camera.fov += (targetFov - this.player.camera.fov) * Math.min(dt * 12, 1);
+      this.player.camera.updateProjectionMatrix();
+    }
+
     if (this.currentWeaponModel) {
       const targetPos = this.isAiming ? this.adsPosition : this.hipPosition;
       this.currentWeaponModel.position.lerp(targetPos, Math.min(dt * 10, 1));
@@ -891,8 +1149,10 @@ export class Game {
       this.reloadAnimationTime += dt;
       if (this.reloadAnimationTime >= this.reloadAnimationDuration) {
         const weapon = this.weapons[this.equipment];
-        weapon.currentAmmo = weapon.magazineSize;
-        weapon.isReloading = false;
+        if (weapon && weapon.magazineSize > 0) {
+          weapon.currentAmmo = weapon.magazineSize;
+          weapon.isReloading = false;
+        }
         this.isReloadAnimating = false;
       }
     }
@@ -939,6 +1199,7 @@ export class Game {
       }
     }
 
+    this.updateFlags(dt);
     this.updateBots(dt);
 
     if (this.messageTimer > 0) {
@@ -953,6 +1214,22 @@ export class Game {
   private findNearestEnemy(bot: Bot): { pos: THREE.Vector3; isPlayer: boolean; bot?: Bot } | null {
     let nearest: { pos: THREE.Vector3; isPlayer: boolean; bot?: Bot } | null = null;
     let nearestDist = Infinity;
+
+    // Prioritize enemy flag carrier if our team's flag is stolen!
+    const friendlyFlag = bot.team === 'blue' ? this.blueFlag : this.redFlag;
+    if (friendlyFlag && friendlyFlag.carrier) {
+      if (friendlyFlag.carrier.isPlayer && bot.team !== this.playerTeam && !this.player.isDead) {
+        const dist = bot.position.distanceTo(this.player.position);
+        if (dist < 75) {
+          return { pos: this.player.position.clone(), isPlayer: true };
+        }
+      } else if (friendlyFlag.carrier.bot && !friendlyFlag.carrier.bot.isDead && friendlyFlag.carrier.bot.team !== bot.team) {
+        const dist = bot.position.distanceTo(friendlyFlag.carrier.bot.position);
+        if (dist < 75) {
+          return { pos: friendlyFlag.carrier.bot.position.clone(), isPlayer: false, bot: friendlyFlag.carrier.bot };
+        }
+      }
+    }
 
     // Check player
     if (bot.team !== this.playerTeam && !this.player.isDead) {
@@ -977,11 +1254,13 @@ export class Game {
   }
 
   private updateBots(dt: number): void {
-    const startIndex = this.currentBotUpdateIndex;
-    const endIndex = Math.min(startIndex + this.botsPerBatch, this.bots.length);
-    
-    for (let i = startIndex; i < endIndex; i++) {
+    const friendlyFlag = (team: Team) => team === 'blue' ? this.blueFlag : this.redFlag;
+    const enemyFlag = (team: Team) => team === 'blue' ? this.redFlag : this.blueFlag;
+
+    // Update ALL bots every frame for responsive, fluid movement and action
+    for (let i = 0; i < this.bots.length; i++) {
       const bot = this.bots[i];
+
       if (bot.isDead) {
         bot.respawnTimer -= dt;
         if (bot.respawnTimer <= 0) {
@@ -990,191 +1269,235 @@ export class Game {
           bot.mesh.visible = true;
           const spawnPos = this.getSafeSpawnPos(bot.team);
           bot.position.copy(spawnPos);
+          bot.lastPos.copy(spawnPos);
+          bot.stuckTimer = 0;
+          bot.carryingFlag = false;
           bot.mesh.position.copy(bot.position);
         }
         continue;
       }
 
-      // Find nearest enemy
+      const eFlag = enemyFlag(bot.team);
+      const fFlag = friendlyFlag(bot.team);
+      const homeBasePos = bot.team === 'blue' ? BLUE_FLAG_POS : RED_FLAG_POS;
+
+      // Find nearest enemy target
       const enemyTarget = this.findNearestEnemy(bot);
       const distToEnemy = enemyTarget ? bot.position.distanceTo(enemyTarget.pos) : Infinity;
 
-      // Update behavior state
-      bot.behaviorTimer -= dt;
-      if (bot.behaviorTimer <= 0) {
-        bot.behaviorTimer = 2 + Math.random() * 3;
-        
-        if (enemyTarget && distToEnemy < 20) {
-          // Close range - strafe or engage
-          const roll = Math.random();
-          if (roll < 0.4) {
-            bot.behaviorState = 'strafe';
-            bot.strafeDirection = Math.random() > 0.5 ? 1 : -1;
-          } else if (roll < 0.7) {
-            bot.behaviorState = 'crouch';
-            bot.crouchTimer = 1 + Math.random() * 2;
-          } else {
-            bot.behaviorState = 'engage';
-          }
-        } else if (enemyTarget && distToEnemy < 40) {
-          // Medium range - engage or patrol
-          const roll = Math.random();
-          if (roll < 0.5 * bot.aggression) {
-            bot.behaviorState = 'engage';
-          } else {
-            bot.behaviorState = 'patrol';
-          }
+      // Tactical decision making
+      if (bot.carryingFlag) {
+        // PRIORITY 1: Bot is carrying enemy flag - rush straight home to capture!
+        bot.targetPos.set(homeBasePos.x + bot.laneOffset * 0.3, 0, homeBasePos.z);
+        bot.behaviorState = 'returnFlag';
+      } else if (fFlag && fFlag.carrier) {
+        // PRIORITY 2: Friendly flag is stolen! Intercept and kill enemy carrier!
+        const carrierPos = fFlag.carrier.isPlayer ? this.player.position : fFlag.carrier.bot?.position;
+        if (carrierPos && bot.position.distanceTo(carrierPos) < 90) {
+          bot.targetPos.copy(carrierPos);
+          bot.behaviorState = 'intercept';
         } else {
-          // No enemy - patrol
-          bot.behaviorState = 'patrol';
+          bot.targetPos.set(eFlag.currentPos.x + bot.laneOffset, 0, eFlag.currentPos.z);
+          bot.behaviorState = 'rushFlag';
         }
-      }
-
-      // Execute behavior
-      bot.moveTimer -= dt;
-      if (bot.moveTimer <= 0) {
-        bot.moveTimer = 2 + Math.random() * 3;
-        
-        if (bot.behaviorState === 'engage' && enemyTarget) {
-          // Move toward enemy
-          bot.targetPos.copy(enemyTarget.pos);
-        } else if (bot.behaviorState === 'strafe' && enemyTarget) {
-          // Strafe around enemy
-          const toEnemy = enemyTarget.pos.clone().sub(bot.position);
-          const perpX = -toEnemy.z * bot.strafeDirection;
-          const perpZ = toEnemy.x * bot.strafeDirection;
-          bot.targetPos.set(
-            bot.position.x + perpX * 0.8,
-            bot.position.y,
-            bot.position.z + perpZ * 0.8
-          );
-        } else {
-          // Patrol - random movement
+      } else if (eFlag && eFlag.carrier) {
+        // PRIORITY 3: Ally has enemy flag! Escort teammate home!
+        bot.targetPos.set(homeBasePos.x + bot.laneOffset, 0, homeBasePos.z);
+        bot.behaviorState = 'escort';
+      } else if (bot.role === 'attacker') {
+        // PRIORITY 4: Attacker pushes for enemy flag!
+        bot.targetPos.set(eFlag.currentPos.x + bot.laneOffset, 0, eFlag.currentPos.z);
+        bot.behaviorState = 'rushFlag';
+      } else {
+        // PRIORITY 5: Defender patrols friendly base area
+        bot.moveTimer -= dt;
+        if (bot.moveTimer <= 0) {
+          bot.moveTimer = 2 + Math.random() * 2;
           const angle = Math.random() * Math.PI * 2;
-          const dist = 5 + Math.random() * 10;
-          bot.targetPos.set(
-            bot.position.x + Math.cos(angle) * dist,
-            bot.position.y,
-            bot.position.z + Math.sin(angle) * dist
-          );
+          const dist = 6 + Math.random() * 14;
+          bot.targetPos.set(homeBasePos.x + Math.cos(angle) * dist, 0, homeBasePos.z + Math.sin(angle) * dist);
         }
+        bot.behaviorState = 'defend';
       }
 
-      // Move toward target
+      // Movement Physics & Obstacle Handling
       const toTarget = bot.targetPos.clone().sub(bot.position);
       toTarget.y = 0;
-      if (toTarget.length() > 0.5) {
-        toTarget.normalize();
-        const speed = bot.isCrouching ? 2 : 4;
-        bot.position.x += toTarget.x * speed * dt;
-        bot.position.z += toTarget.z * speed * dt;
-        
-        // Smooth rotation toward target
-        const targetYaw = Math.atan2(toTarget.x, toTarget.z);
+      const distToTarget = toTarget.length();
+
+      if (distToTarget > 0.8) {
+        const moveDir = toTarget.clone().normalize();
+
+        // High responsiveness and fast movement speed
+        let speed = bot.carryingFlag ? 6.5 : (bot.role === 'attacker' ? 5.8 : 4.6);
+        if (bot.isCrouching) speed = 2.5;
+
+        // Obstacle avoidance: check ground height ahead
+        const probeX = bot.position.x + moveDir.x * 0.8;
+        const probeZ = bot.position.z + moveDir.z * 0.8;
+        const probeGround = this.world.getGroundHeight(probeX, probeZ);
+        const stepHeight = probeGround - bot.position.y;
+
+        if (stepHeight > 1.25) {
+          // Wall/obstacle ahead: deflect around obstacle using strafe direction
+          const perpX = -moveDir.z * bot.strafeDirection;
+          const perpZ = moveDir.x * bot.strafeDirection;
+          moveDir.x = perpX;
+          moveDir.z = perpZ;
+        }
+
+        const nextX = bot.position.x + moveDir.x * speed * dt;
+        const nextZ = bot.position.z + moveDir.z * speed * dt;
+        const groundY = this.world.getGroundHeight(nextX, nextZ);
+
+        if (groundY - bot.position.y <= 1.35) {
+          bot.position.x = nextX;
+          bot.position.z = nextZ;
+          bot.position.y = groundY;
+        }
+
+        // Stuck detection
+        const distMoved = Math.hypot(bot.position.x - bot.lastPos.x, bot.position.z - bot.lastPos.z);
+        if (distMoved < 0.04) {
+          bot.stuckTimer += dt;
+          if (bot.stuckTimer > 0.3) {
+            bot.strafeDirection = -bot.strafeDirection;
+            bot.position.y += 0.5;
+            bot.stuckTimer = 0;
+          }
+        } else {
+          bot.stuckTimer = 0;
+          bot.lastPos.copy(bot.position);
+        }
+
+        // Yaw rotation: face movement direction or face enemy when in close combat
+        let facingDir = moveDir;
+        if (enemyTarget && distToEnemy < 35) {
+          const toEnemy = enemyTarget.pos.clone().sub(bot.position);
+          toEnemy.y = 0;
+          if (toEnemy.length() > 0.1) facingDir = toEnemy.normalize();
+        }
+
+        const targetYaw = Math.atan2(facingDir.x, facingDir.z);
         const currentYaw = bot.mesh.rotation.y;
         let yawDiff = targetYaw - currentYaw;
         while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
         while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
-        bot.mesh.rotation.y += yawDiff * Math.min(dt * 10, 1);
-      }
+        bot.mesh.rotation.y += yawDiff * Math.min(dt * 12, 1);
 
-      // Update ground height
-      const groundY = this.world.getGroundHeight(bot.position.x, bot.position.z);
-      bot.position.y = groundY;
-      bot.mesh.position.copy(bot.position);
-
-      // Walking animation - legs and arms swing
-      const isMoving = toTarget.length() > 0.5;
-      if (isMoving) {
-        const walkSpeed = bot.isCrouching ? 6 : 10;
-        bot.walkCycle += dt * walkSpeed;
+        // Walking animation
+        bot.walkCycle += dt * (speed * 1.8);
         const swing = Math.sin(bot.walkCycle) * 0.5;
-        
-        // Get leg and arm meshes
         const children = bot.mesh.children;
         const leftLeg = children.find(c => c.position.x < -0.1 && c.position.y < 1);
         const rightLeg = children.find(c => c.position.x > 0.1 && c.position.y < 1);
         const leftArm = children.find(c => c.position.x < -0.3 && c.position.y > 0.8);
         const rightArm = children.find(c => c.position.x > 0.3 && c.position.y > 0.8);
-        
+
         if (leftLeg) leftLeg.rotation.x = swing;
         if (rightLeg) rightLeg.rotation.x = -swing;
         if (leftArm) leftArm.rotation.x = -swing * 0.7;
         if (rightArm) rightArm.rotation.x = swing * 0.7;
-        
-        // Body bob
-        const bob = Math.abs(Math.sin(bot.walkCycle * 2)) * 0.05;
-        bot.mesh.position.y += bob;
       } else {
-        // Reset animations when not moving
+        // Reset limbs
         const children = bot.mesh.children;
         const leftLeg = children.find(c => c.position.x < -0.1 && c.position.y < 1);
         const rightLeg = children.find(c => c.position.x > 0.1 && c.position.y < 1);
         const leftArm = children.find(c => c.position.x < -0.3 && c.position.y > 0.8);
         const rightArm = children.find(c => c.position.x > 0.3 && c.position.y > 0.8);
-        
         if (leftLeg) leftLeg.rotation.x *= 0.9;
         if (rightLeg) rightLeg.rotation.x *= 0.9;
         if (leftArm) leftArm.rotation.x *= 0.9;
         if (rightArm) rightArm.rotation.x *= 0.9;
       }
 
-      // Head tracking - look at enemy when in combat
+      bot.mesh.position.copy(bot.position);
+
+      // Head tracking towards enemy
       if (enemyTarget && distToEnemy < 35) {
         const head = bot.mesh.children.find(c => c.position.y > 1.7 && c.position.y < 2.0);
         if (head) {
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
           const headYaw = Math.atan2(toEnemy.x, toEnemy.z) - bot.mesh.rotation.y;
           let normalizedHeadYaw = Math.atan2(Math.sin(headYaw), Math.cos(headYaw));
-          const clampedHeadYaw = Math.max(-1.05, Math.min(1.05, normalizedHeadYaw));
-          head.rotation.y += (clampedHeadYaw - head.rotation.y) * Math.min(dt * 8, 1);
+          head.rotation.y = Math.max(-1.05, Math.min(1.05, normalizedHeadYaw));
         }
       }
 
-      // Shooting
-      bot.shootTimer -= dt;
-      if (bot.shootTimer <= 0 && enemyTarget && distToEnemy < 40) {
-        bot.shootTimer = 1 + Math.random() * 2;
-        
-        // Check line of sight
-        const toEnemy = enemyTarget.pos.clone().sub(bot.position);
-        const dir = toEnemy.normalize();
-        const hit = this.world.raycast(bot.position.clone().add(new THREE.Vector3(0, 1.5, 0)), dir, 40);
-        
-        if (!hit || hit.distance > 40) {
-          // No obstacle - shoot
-          if (enemyTarget.isPlayer) {
-            // Shoot at player
-            const accuracy = 0.3 + bot.skill * 0.3;
-            if (Math.random() < accuracy) {
-              const damage = 20 + Math.random() * 15;
-              this.player.takeDamage(damage);
-              this.hitMarkerTimer = 0.2;
-              this.sounds.hitMarker();
-              
-              if (this.player.isDead) {
-                this.redKills++;
-                this.sounds.killSound();
-              }
+      // Combat shooting logic
+      if (enemyTarget && distToEnemy < 45) {
+        if (bot.burstRemaining > 0) {
+          bot.burstTimer -= dt;
+          if (bot.burstTimer <= 0) {
+            bot.burstRemaining--;
+            bot.burstTimer = 0.11;
+            this.executeBotShot(bot, enemyTarget);
+          }
+        } else {
+          bot.shootTimer -= dt;
+          if (bot.shootTimer <= 0) {
+            if (bot.weapon === 'smg') {
+              bot.burstRemaining = 3 + Math.floor(Math.random() * 3);
+              bot.burstTimer = 0;
+              bot.shootTimer = 1.0 + Math.random() * 0.8;
+            } else {
+              this.executeBotShot(bot, enemyTarget);
+              bot.shootTimer = 0.7 + Math.random() * 0.6;
             }
           }
         }
       }
+    }
+  }
 
-      // Update crouch state
-      if (bot.behaviorState === 'crouch') {
-        bot.crouchTimer -= dt;
-        bot.isCrouching = true;
-        if (bot.crouchTimer <= 0) {
-          bot.isCrouching = false;
-          bot.behaviorState = 'patrol';
-        }
-      } else {
-        bot.isCrouching = false;
-      }
+  private executeBotShot(bot: Bot, target: { pos: THREE.Vector3; isPlayer: boolean; bot?: Bot }): void {
+    const origin = bot.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+    const toTarget = target.pos.clone().add(new THREE.Vector3(0, 1.2, 0)).sub(origin);
+    const dist = toTarget.length();
+    const dir = toTarget.clone().normalize();
+
+    // Check line of sight
+    const hit = this.world.raycast(origin, dir, 50);
+    if (hit && hit.distance < dist - 0.5) {
+      return; // Occluded by terrain
     }
 
-    this.currentBotUpdateIndex = endIndex >= this.bots.length ? 0 : endIndex;
+    // Visual tracer and flash
+    this.createMuzzleFlash(origin, dir);
+    this.createBulletTracer(origin, dir);
+
+    // Distant / 3D gunshot sound based on player distance
+    const distToPlayer = bot.position.distanceTo(this.player.position);
+    const pan = Math.sin(Math.atan2(bot.position.x - this.player.position.x, bot.position.z - this.player.position.z) - this.player.yaw);
+    this.sounds.playDistantShot(bot.weapon, distToPlayer, pan);
+
+    // Hit calculation
+    const hitChance = Math.max(0.25, 0.75 - dist / 60) * bot.skill;
+    if (Math.random() < hitChance) {
+      if (target.isPlayer) {
+        const dmg = bot.weapon === 'rifle' ? 25 + Math.random() * 20 : 12 + Math.random() * 12;
+        this.player.takeDamage(dmg);
+        this.hitMarkerTimer = 0.2;
+        this.sounds.hitMarker();
+
+        if (this.player.isDead) {
+          if (bot.team === 'red') this.redKills++; else this.blueKills++;
+          this.sounds.killSound();
+          this.showMessage(`☠️ You were killed by ${bot.name}!`);
+        }
+      } else if (target.bot) {
+        const dmg = bot.weapon === 'rifle' ? 40 + Math.random() * 25 : 18 + Math.random() * 15;
+        target.bot.hp -= dmg;
+
+        if (target.bot.hp <= 0) {
+          target.bot.isDead = true;
+          target.bot.mesh.visible = false;
+          target.bot.respawnTimer = 6;
+          if (bot.team === 'blue') this.blueKills++; else this.redKills++;
+          this.showMessage(`🎯 ${bot.name} eliminated ${target.bot.name}!`);
+        }
+      }
+    }
   }
 
   handleBuildClick(): void {
@@ -1184,6 +1507,15 @@ export class Game {
   private emitState(): void {
     if (this.onStateChange) {
       const weapon = this.weapons[this.equipment];
+      let carrierName = '';
+      if (this.player.carryingFlag) {
+        carrierName = `You (${this.playerTeam.toUpperCase()})`;
+      } else if (this.redFlag?.carrier) {
+        carrierName = `${this.redFlag.carrier.name} (${this.redFlag.carrier.isPlayer ? this.playerTeam.toUpperCase() : this.redFlag.carrier.bot?.team.toUpperCase()})`;
+      } else if (this.blueFlag?.carrier) {
+        carrierName = `${this.blueFlag.carrier.name} (${this.blueFlag.carrier.isPlayer ? this.playerTeam.toUpperCase() : this.blueFlag.carrier.bot?.team.toUpperCase()})`;
+      }
+
       this.onStateChange({
         hp: this.player.hp,
         maxHp: this.player.maxHp,
@@ -1202,11 +1534,11 @@ export class Game {
         blueCaptures: this.blueCaptures,
         redCaptures: this.redCaptures,
         isAiming: this.isAiming,
-        currentAmmo: weapon.currentAmmo,
-        magazineSize: weapon.magazineSize,
-        isReloading: weapon.isReloading,
+        currentAmmo: weapon ? weapon.currentAmmo : 0,
+        magazineSize: weapon ? weapon.magazineSize : 0,
+        isReloading: weapon ? weapon.isReloading : false,
         playerCarryingFlag: this.player.carryingFlag,
-        flagCarrierName: this.player.carryingFlag ? 'You' : '',
+        flagCarrierName: carrierName,
       });
     }
   }
