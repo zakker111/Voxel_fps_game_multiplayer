@@ -152,4 +152,8 @@ export class NetworkClient {
   sendToggleSpectator(): void {
     this.send({ type: 'toggleSpectator' });
   }
+
+  sendFootstep(volume: number, pitch: number): void {
+    this.send({ type: 'footstep', volume, pitch });
+  }
 }
