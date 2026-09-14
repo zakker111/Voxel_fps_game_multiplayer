@@ -145,6 +145,16 @@ export class ServerGame {
         this.handleFlagPickup(playerId);
         break;
 
+      case 'toggleSpectator':
+        player.isSpectating = !player.isSpectating;
+        this.broadcast({
+          type: 'spectatorToggled',
+          playerId,
+          isSpectating: player.isSpectating,
+        });
+        console.log(`Player ${playerId} ${player.isSpectating ? 'entered' : 'exited'} spectator mode`);
+        break;
+
       case 'disconnect':
         this.removePlayer(playerId);
         break;
@@ -306,10 +316,17 @@ export class ServerGame {
         setTimeout(() => {
           const spawnPos = this.getSpawnPosition(target.team);
           target.respawn(spawnPos);
+          // Reset inventory on respawn
+          this.inventories.set(targetId, 0);
           this.broadcast({
             type: 'playerRespawned',
             playerId: targetId,
             position: spawnPos,
+          });
+          // Send inventory update to the respawned player
+          this.sendToPlayer(targetId, {
+            type: 'inventoryUpdated',
+            inventory: 0,
           });
         }, 4000);
       }

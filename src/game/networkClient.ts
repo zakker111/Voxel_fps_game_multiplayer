@@ -148,4 +148,8 @@ export class NetworkClient {
   sendBuild(position: Position): void {
     this.send({ type: 'build', position });
   }
+
+  sendToggleSpectator(): void {
+    this.send({ type: 'toggleSpectator' });
+  }
 }

@@ -137,14 +137,14 @@ function App() {
               </div>
               <div className="mt-3 pt-3 border-t border-gray-700">
                 <p className="text-gray-300"><b>Left Click</b> — Shoot / Use tool</p>
-                <p className="text-gray-300"><b>Right Click</b> — Toggle iron sights / Build</p>
+                <p className="text-gray-300"><b>Right Click</b> — Toggle iron sights / Place block (instant)</p>
                 <p className="text-gray-300"><b>R</b> — Reload weapon</p>
                 <p className="text-gray-300"><b>Mouse Wheel</b> — Switch equipment</p>
                 <div className="mt-2 text-xs text-gray-400 space-y-1">
                   <p>🎯 1 headshot / 3 body shots to kill</p>
                   <p>🔫 Rifle: 10 rounds | SMG: 30 rounds (unlimited ammo)</p>
                   <p>🏃 Running + shooting = less accurate | 🧎 Crouching = more accurate</p>
-                  <p>🏗️ <b>How to build:</b> Harvest blocks with pickaxe (4), then right-click to place</p>
+                  <p>🏗️ <b>How to build:</b> Harvest blocks with pickaxe (4), then right-click to place instantly like Minecraft!</p>
                   <p>💥 All terrain is destroyable by gunfire (3 shots per voxel)</p>
                   <p>🧪 Singleplayer mode: No bots, test building & combat freely</p>
                 </div>

@@ -29,6 +29,7 @@ export class ServerPlayer {
   isGrounded: boolean = false;
   isShooting: boolean = false;
   carryingFlag: boolean = false;
+  isSpectating: boolean = false;
   
   // Magazine system
   currentAmmo: number = 10;

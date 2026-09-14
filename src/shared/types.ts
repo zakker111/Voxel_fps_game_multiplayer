@@ -54,6 +54,7 @@ export type ClientMessage =
   | { type: 'build'; position: Position }
   | { type: 'reload' }
   | { type: 'pickupFlag' }
+  | { type: 'toggleSpectator' }
   | { type: 'disconnect' };
 
 export interface PlayerInput {
@@ -87,7 +88,8 @@ export type ServerMessage =
   | { type: 'flagCaptured'; team: 'red' | 'blue'; playerId: string; captures: { red: number; blue: number } }
   | { type: 'flagPickedUp'; playerId: string; flagTeam: 'red' | 'blue' }
   | { type: 'flagDropped'; position: Position; flagTeam: 'red' | 'blue' }
-  | { type: 'flagReturned'; flagTeam: 'red' | 'blue' };
+  | { type: 'flagReturned'; flagTeam: 'red' | 'blue' }
+  | { type: 'spectatorToggled'; playerId: string; isSpectating: boolean };
 
 export interface GameState {
   players: Map<string, PlayerState>;

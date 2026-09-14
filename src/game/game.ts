@@ -145,6 +145,9 @@ export class Game {
   redCaptures: number = 0;
   isSpectating: boolean = false;
   spectatorAngle: number = 0;
+  spectatorSpeed: number = 20;
+  spectatorFlyUp: boolean = false;
+  spectatorFlyDown: boolean = false;
   buildMode: boolean = false;
   clock: THREE.Clock;
   onStateChange: ((state: GameState) => void) | null = null;
@@ -1137,7 +1140,7 @@ export class Game {
       if (this.equipment === 'rifle' || this.equipment === 'smg') {
         this.isAiming = !this.isAiming;
       } else {
-        this.buildMode = true;
+        // Instant snappy block placement like Minecraft
         this.tryBuild();
       }
     }
@@ -1145,7 +1148,7 @@ export class Game {
 
   private onMouseUp(e: MouseEvent): void {
     if (e.button === 0) this.isMouseDown = false;
-    if (e.button === 2) this.buildMode = false;
+    // No buildMode toggle needed - instant placement on right-click
   }
 
   private onWheel(e: WheelEvent): void {
@@ -1163,11 +1166,25 @@ export class Game {
     if (e.code === 'Digit4') { this.equipment = 'pickaxe'; this.switchWeaponModel('pickaxe'); }
     if (e.code === 'KeyR') this.startReload();
     if (e.code === 'KeyP') this.toggleSpectator();
-    this.player.handleKeyDown(e.code);
+    
+    // Spectator mode controls - allow flying and inspection
+    if (this.isSpectating) {
+      if (e.code === 'Space' || e.code === 'KeyW') this.spectatorFlyUp = true;
+      if (e.code === 'ShiftLeft' || e.code === 'KeyS') this.spectatorFlyDown = true;
+      if (e.code === 'ArrowLeft') this.spectatorAngle += Math.PI / 8;
+      if (e.code === 'ArrowRight') this.spectatorAngle -= Math.PI / 8;
+    } else {
+      this.player.handleKeyDown(e.code);
+    }
   }
 
   private onKeyUp(e: KeyboardEvent): void {
-    this.player.handleKeyUp(e.code);
+    if (this.isSpectating) {
+      if (e.code === 'Space' || e.code === 'KeyW') this.spectatorFlyUp = false;
+      if (e.code === 'ShiftLeft' || e.code === 'KeyS') this.spectatorFlyDown = false;
+    } else {
+      this.player.handleKeyUp(e.code);
+    }
   }
 
   private onMouseMove(e: MouseEvent): void {
@@ -1181,10 +1198,15 @@ export class Game {
 
   toggleSpectator(): void {
     this.isSpectating = !this.isSpectating;
-    if (!this.isSpectating) {
+    if (this.isSpectating) {
+      // Reset spectator controls when entering spectator mode
+      this.spectatorFlyUp = false;
+      this.spectatorFlyDown = false;
+      this.showMessage('🎥 Spectator Mode: Fly with Space/Shift, Rotate with Arrow Keys');
+    } else {
       this.player.updateCamera();
+      this.showMessage('🎯 Player First-Person: ON');
     }
-    this.showMessage(this.isSpectating ? '🎥 Spectator Camera: ON' : '🎯 Player First-Person: ON');
   }
 
   requestPointerLock(canvas: HTMLCanvasElement): void {
@@ -1335,10 +1357,26 @@ export class Game {
     const hit = this.world.raycast(origin, dir, 5);
     
     if (hit) {
-      this.world.damageVoxel(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z, 3);
+      // Dig trench: remove target voxel and the one below it (2 tiles)
+      const vx = hit.voxelPos.x;
+      const vy = hit.voxelPos.y;
+      const vz = hit.voxelPos.z;
+      
+      // Destroy target voxel
+      const result1 = this.world.damageVoxel(vx, vy, vz, 3);
+      if (result1.destroyed) {
+        this.inventory++;
+      }
+      
+      // Destroy voxel below for trench effect
+      const result2 = this.world.damageVoxel(vx, vy - 1, vz, 3);
+      if (result2.destroyed) {
+        this.inventory++;
+      }
+      
       this.sounds.spadeHit();
       if (this.networkClient && this.networkClient.isConnected()) {
-        this.networkClient.sendUseTool('spade', { x: hit.voxelPos.x, y: hit.voxelPos.y, z: hit.voxelPos.z });
+        this.networkClient.sendUseTool('spade', { x: vx, y: vy, z: vz });
       }
     }
   }
@@ -1362,8 +1400,33 @@ export class Game {
         if (this.networkClient && this.networkClient.isConnected()) {
           this.networkClient.sendBuild({ x: px, y: py, z: pz });
         }
+        
+        // Add instant visual feedback - flash the placed block
+        this.createBlockPlacementEffect(px, py, pz);
       }
     }
+  }
+
+  private createBlockPlacementEffect(x: number, y: number, z: number): void {
+    // Create a quick flash effect at the placement location
+    const flashGeo = new THREE.BoxGeometry(VOXEL_SIZE * 1.1, VOXEL_SIZE * 1.1, VOXEL_SIZE * 1.1);
+    const flashMat = new THREE.MeshBasicMaterial({ color: 0x88ff88, transparent: true, opacity: 0.7 });
+    const flashMesh = new THREE.Mesh(flashGeo, flashMat);
+    flashMesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+    this.scene.add(flashMesh);
+    
+    // Animate the flash fading out
+    const fadeOut = () => {
+      flashMat.opacity -= 0.15;
+      if (flashMat.opacity > 0) {
+        requestAnimationFrame(fadeOut);
+      } else {
+        this.scene.remove(flashMesh);
+        flashGeo.dispose();
+        flashMat.dispose();
+      }
+    };
+    requestAnimationFrame(fadeOut);
   }
 
   private startReload(): void {
@@ -1457,6 +1520,10 @@ export class Game {
             w.isReloading = false;
           }
         }
+        // Reset inventory on respawn
+        this.inventory = 0;
+        // Reset flag carrying state
+        this.player.carryingFlag = false;
         this.isReloadAnimating = false;
         this.sounds.respawn();
       }
@@ -1593,9 +1660,13 @@ export class Game {
       }
     }
 
-    // Dynamic Spectator camera view
+    // Dynamic Spectator camera view with fly controls
     if (this.isSpectating) {
-      this.spectatorAngle += dt * 0.22;
+      // Auto-rotate when not using manual controls
+      if (!this.spectatorFlyUp && !this.spectatorFlyDown) {
+        this.spectatorAngle += dt * 0.22;
+      }
+      
       let focusTarget = new THREE.Vector3(0, this.world.getOriginalGroundLevel() + 2, 0);
       if (this.redFlag?.carrier) {
         const carrierPos = this.redFlag.carrier.isPlayer ? this.player.position : this.redFlag.carrier.bot?.position;
@@ -1606,10 +1677,22 @@ export class Game {
       }
 
       const camDist = 30;
-      const camHeight = 18;
+      const baseCamHeight = 18;
+      let camY = focusTarget.y + baseCamHeight;
+      
+      // Apply fly up/down controls
+      if (this.spectatorFlyUp) {
+        camY += this.spectatorSpeed * dt;
+      }
+      if (this.spectatorFlyDown) {
+        camY -= this.spectatorSpeed * dt;
+      }
+      
+      // Ensure minimum height above ground
       const camX = focusTarget.x + Math.sin(this.spectatorAngle) * camDist;
       const camZ = focusTarget.z + Math.cos(this.spectatorAngle) * camDist;
-      const camY = Math.max(this.world.getGroundHeight(camX, camZ) + 4, focusTarget.y + camHeight);
+      const minGroundY = this.world.getGroundHeight(camX, camZ) + 2;
+      camY = Math.max(minGroundY, camY);
 
       this.player.camera.position.lerp(new THREE.Vector3(camX, camY, camZ), Math.min(dt * 4, 1));
       this.player.camera.lookAt(focusTarget.x, focusTarget.y + 1.5, focusTarget.z);
@@ -1940,7 +2023,7 @@ export class Game {
         targetInfo: this.player.targetInfo || '',
         message: this.message,
         messageTimer: this.messageTimer,
-        buildMode: this.buildMode,
+        buildMode: false,  // Always false with instant placement
         buildValid: this.inventory > 0,
         blueKills: this.blueKills,
         redKills: this.redKills,
