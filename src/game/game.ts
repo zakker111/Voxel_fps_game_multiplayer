@@ -56,7 +56,7 @@ interface Bot {
   grounded: boolean;
   team: Team;
   name: string;
-  role: 'attacker' | 'defender';
+  role: 'attacker' | 'defender' | 'flanker' | 'support';
   laneOffset: number;
   nameTag: THREE.Sprite;
   isCrouching: boolean;
@@ -81,6 +81,23 @@ interface Bot {
   lookAroundTimer: number;
   lookAroundTarget: number;
   walkCycle: number;
+  // Human-like behavior properties
+  hasSpade: boolean;
+  isDigging: boolean;
+  digTimer: number;
+  digTarget: { x: number; y: number; z: number } | null;
+  trenchDepth: number;
+  isInTrench: boolean;
+  panicLevel: number;
+  confidence: number;
+  suppressionTimer: number;
+  lastSeenEnemy: THREE.Vector3 | null;
+  memoryPosition: THREE.Vector3 | null;
+  memoryTimer: number;
+  flankRoute: Array<{ x: number; z: number }> | null;
+  flankProgress: number;
+  squadId: number;
+  isLeading: boolean;
 }
 
 interface Flag {
@@ -145,9 +162,15 @@ export class Game {
   redCaptures: number = 0;
   isSpectating: boolean = false;
   spectatorAngle: number = 0;
+  spectatorPitch: number = 0;
   spectatorSpeed: number = 20;
   spectatorFlyUp: boolean = false;
   spectatorFlyDown: boolean = false;
+  spectatorMoveForward: boolean = false;
+  spectatorMoveBackward: boolean = false;
+  spectatorMoveLeft: boolean = false;
+  spectatorMoveRight: boolean = false;
+  lastManualControlTime: number = 0;
   buildMode: boolean = false;
   clock: THREE.Clock;
   onStateChange: ((state: GameState) => void) | null = null;
@@ -706,9 +729,20 @@ export class Game {
       nameTag.position.y = 2.6;
       botMesh.add(nameTag);
 
-      // 70% attackers (rush enemy flag), 30% defenders (patrol base)
-      const role: 'attacker' | 'defender' = (i === 0 || i === 1) ? 'defender' : 'attacker';
+      // Diverse roles: 40% attackers, 30% defenders, 20% flankers, 10% support
+      let role: 'attacker' | 'defender' | 'flanker' | 'support';
+      if (i === 0 || i === 1) {
+        role = 'defender';
+      } else if (i % 5 === 0) {
+        role = 'support';
+      } else if (i % 5 === 1 || i % 5 === 2) {
+        role = 'flanker';
+      } else {
+        role = 'attacker';
+      }
+      
       const laneOffset = ((i % 3) - 1) * 8 + (Math.random() - 0.5) * 4;
+      const hasSpade = Math.random() > 0.4; // 60% of bots have spades for digging
 
       this.bots.push({
         mesh: botMesh,
@@ -738,6 +772,23 @@ export class Game {
         carryingFlag: false, flagMesh: null,
         lookAroundTimer: 0, lookAroundTarget: 0,
         walkCycle: Math.random() * Math.PI * 2,
+        // Human-like behavior initialization
+        hasSpade,
+        isDigging: false,
+        digTimer: 0,
+        digTarget: null,
+        trenchDepth: 0,
+        isInTrench: false,
+        panicLevel: 0,
+        confidence: 0.7 + Math.random() * 0.3,
+        suppressionTimer: 0,
+        lastSeenEnemy: null,
+        memoryPosition: null,
+        memoryTimer: 0,
+        flankRoute: null,
+        flankProgress: 0,
+        squadId: Math.floor(i / 3), // Group into squads of 3
+        isLeading: i % 3 === 0,
       });
     }
   }
@@ -1078,6 +1129,12 @@ export class Game {
       }
     });
 
+    // Handle spectator toggled from other players
+    this.networkClient.onMessage('spectatorToggled', (msg: any) => {
+      // Track remote player spectator state (for future use)
+      console.log(`Player ${msg.playerId} ${msg.isSpectating ? 'entered' : 'exited'} spectator mode`);
+    });
+
     this.networkClient.connect().catch((err) => {
       console.error('Failed to connect to server:', err);
       this.showMessage('Failed to connect to server');
@@ -1167,12 +1224,18 @@ export class Game {
     if (e.code === 'KeyR') this.startReload();
     if (e.code === 'KeyP') this.toggleSpectator();
     
-    // Spectator mode controls - allow flying and inspection
+    // Spectator mode controls - WASD for movement, Space/Shift for up/down, mouse for look
     if (this.isSpectating) {
-      if (e.code === 'Space' || e.code === 'KeyW') this.spectatorFlyUp = true;
-      if (e.code === 'ShiftLeft' || e.code === 'KeyS') this.spectatorFlyDown = true;
+      if (e.code === 'Space') this.spectatorFlyUp = true;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.spectatorFlyDown = true;
+      if (e.code === 'KeyW') this.spectatorMoveForward = true;
+      if (e.code === 'KeyS') this.spectatorMoveBackward = true;
+      if (e.code === 'KeyA') this.spectatorMoveLeft = true;
+      if (e.code === 'KeyD') this.spectatorMoveRight = true;
       if (e.code === 'ArrowLeft') this.spectatorAngle += Math.PI / 8;
       if (e.code === 'ArrowRight') this.spectatorAngle -= Math.PI / 8;
+      // Mark manual control
+      this.lastManualControlTime = Date.now();
     } else {
       this.player.handleKeyDown(e.code);
     }
@@ -1180,8 +1243,12 @@ export class Game {
 
   private onKeyUp(e: KeyboardEvent): void {
     if (this.isSpectating) {
-      if (e.code === 'Space' || e.code === 'KeyW') this.spectatorFlyUp = false;
-      if (e.code === 'ShiftLeft' || e.code === 'KeyS') this.spectatorFlyDown = false;
+      if (e.code === 'Space') this.spectatorFlyUp = false;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.spectatorFlyDown = false;
+      if (e.code === 'KeyW') this.spectatorMoveForward = false;
+      if (e.code === 'KeyS') this.spectatorMoveBackward = false;
+      if (e.code === 'KeyA') this.spectatorMoveLeft = false;
+      if (e.code === 'KeyD') this.spectatorMoveRight = false;
     } else {
       this.player.handleKeyUp(e.code);
     }
@@ -1189,9 +1256,13 @@ export class Game {
 
   private onMouseMove(e: MouseEvent): void {
     if (this.isSpectating) {
-      // Spectator mode: rotate camera with mouse
+      // Spectator mode: rotate camera with mouse (yaw and pitch)
       this.spectatorAngle -= e.movementX * 0.003;
-      // Also allow looking up/down by adjusting a pitch variable if needed
+      this.spectatorPitch -= e.movementY * 0.003;
+      // Clamp pitch to avoid flipping
+      this.spectatorPitch = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, this.spectatorPitch));
+      // Mark that manual control was used recently
+      this.lastManualControlTime = Date.now();
       return;
     }
     if (document.pointerLockElement) {
@@ -1208,10 +1279,25 @@ export class Game {
       // Reset spectator controls when entering spectator mode
       this.spectatorFlyUp = false;
       this.spectatorFlyDown = false;
-      this.showMessage('🎥 Spectator Mode: Fly with Space/Shift, Rotate with Arrow Keys');
+      this.spectatorMoveForward = false;
+      this.spectatorMoveBackward = false;
+      this.spectatorMoveLeft = false;
+      this.spectatorMoveRight = false;
+      this.spectatorPitch = 0;
+      this.showMessage('🎥 Spectator Mode: WASD to move, Space/Shift for up/down, Mouse to look');
+      
+      // Send to server in online mode
+      if (this.networkClient && this.networkClient.isConnected()) {
+        this.networkClient.sendToggleSpectator();
+      }
     } else {
       this.player.updateCamera();
       this.showMessage('🎯 Player First-Person: ON');
+      
+      // Send to server in online mode
+      if (this.networkClient && this.networkClient.isConnected()) {
+        this.networkClient.sendToggleSpectator();
+      }
     }
   }
 
@@ -1668,8 +1754,12 @@ export class Game {
 
     // Dynamic Spectator camera view with fly controls
     if (this.isSpectating) {
-      // Auto-rotate when not using manual controls
-      if (!this.spectatorFlyUp && !this.spectatorFlyDown) {
+      // Auto-rotate only if no manual control was used in the last 3 seconds
+      const timeSinceManualControl = Date.now() - this.lastManualControlTime;
+      const isUsingControls = this.spectatorMoveForward || this.spectatorMoveBackward || 
+                              this.spectatorMoveLeft || this.spectatorMoveRight || 
+                              this.spectatorFlyUp || this.spectatorFlyDown;
+      if (timeSinceManualControl > 3000 && !isUsingControls) {
         this.spectatorAngle += dt * 0.22;
       }
       
@@ -1694,13 +1784,45 @@ export class Game {
         camY -= this.spectatorSpeed * dt;
       }
       
+      // Calculate camera position based on angle and pitch
+      const cosPitch = Math.cos(this.spectatorPitch);
+      const sinPitch = Math.sin(this.spectatorPitch);
+      
+      // Horizontal distance adjusted by pitch
+      const horizontalDist = camDist * cosPitch;
+      const verticalOffset = camDist * sinPitch;
+      
+      const camX = focusTarget.x + Math.sin(this.spectatorAngle) * horizontalDist;
+      const camZ = focusTarget.z + Math.cos(this.spectatorAngle) * horizontalDist;
+      camY = camY + verticalOffset;
+      
       // Ensure minimum height above ground
-      const camX = focusTarget.x + Math.sin(this.spectatorAngle) * camDist;
-      const camZ = focusTarget.z + Math.cos(this.spectatorAngle) * camDist;
       const minGroundY = this.world.getGroundHeight(camX, camZ) + 2;
       camY = Math.max(minGroundY, camY);
 
-      this.player.camera.position.lerp(new THREE.Vector3(camX, camY, camZ), Math.min(dt * 4, 1));
+      // Apply WASD movement relative to camera direction
+      const moveSpeed = 30 * dt;
+      const forwardDir = new THREE.Vector3(Math.sin(this.spectatorAngle), 0, Math.cos(this.spectatorAngle));
+      const rightDir = new THREE.Vector3(Math.cos(this.spectatorAngle), 0, -Math.sin(this.spectatorAngle));
+      
+      if (this.spectatorMoveForward) {
+        focusTarget.add(forwardDir.clone().multiplyScalar(moveSpeed));
+      }
+      if (this.spectatorMoveBackward) {
+        focusTarget.sub(forwardDir.clone().multiplyScalar(moveSpeed));
+      }
+      if (this.spectatorMoveLeft) {
+        focusTarget.sub(rightDir.clone().multiplyScalar(moveSpeed));
+      }
+      if (this.spectatorMoveRight) {
+        focusTarget.add(rightDir.clone().multiplyScalar(moveSpeed));
+      }
+
+      // Update camera position to orbit around the focus target
+      const finalCamX = focusTarget.x + Math.sin(this.spectatorAngle) * horizontalDist;
+      const finalCamZ = focusTarget.z + Math.cos(this.spectatorAngle) * horizontalDist;
+      
+      this.player.camera.position.set(finalCamX, camY, finalCamZ);
       this.player.camera.lookAt(focusTarget.x, focusTarget.y + 1.5, focusTarget.z);
     }
 
@@ -1775,6 +1897,18 @@ export class Game {
           bot.stuckTimer = 0;
           bot.carryingFlag = false;
           bot.mesh.position.copy(bot.position);
+          // Reset human-like states
+          bot.isDigging = false;
+          bot.digTimer = 0;
+          bot.digTarget = null;
+          bot.trenchDepth = 0;
+          bot.isInTrench = false;
+          bot.panicLevel = 0;
+          bot.suppressionTimer = 0;
+          bot.lastSeenEnemy = null;
+          bot.memoryPosition = null;
+          bot.flankRoute = null;
+          bot.flankProgress = 0;
         }
         continue;
       }
@@ -1787,17 +1921,40 @@ export class Game {
       const enemyTarget = this.findNearestEnemy(bot);
       const distToEnemy = enemyTarget ? bot.position.distanceTo(enemyTarget.pos) : Infinity;
 
-      // Tactical decision making with more patience
+      // Update human-like psychological states
+      if (enemyTarget && distToEnemy < 30) {
+        bot.panicLevel = Math.min(1.0, bot.panicLevel + dt * 0.5);
+        bot.suppressionTimer = 2.0; // Suppressed for 2 seconds when seeing enemy
+        bot.lastSeenEnemy = enemyTarget.pos.clone();
+        bot.confidence = Math.max(0.2, bot.confidence - dt * 0.1);
+      } else {
+        bot.panicLevel = Math.max(0, bot.panicLevel - dt * 0.2);
+        bot.confidence = Math.min(1.0, bot.confidence + dt * 0.05);
+      }
+      if (bot.suppressionTimer > 0) bot.suppressionTimer -= dt;
+
+      // Memory system - remember last seen enemy position
+      if (bot.lastSeenEnemy) {
+        bot.memoryTimer -= dt;
+        if (bot.memoryTimer <= 0) {
+          bot.lastSeenEnemy = null;
+          bot.memoryPosition = null;
+        }
+      }
+
+      // Tactical decision making with more patience and human-like behaviors
       if (bot.carryingFlag) {
         // PRIORITY 1: Bot is carrying enemy flag - rush straight home to capture!
         bot.targetPos.set(homeBasePos.x + bot.laneOffset * 0.3, 0, homeBasePos.z);
         bot.behaviorState = 'returnFlag';
+        bot.isDigging = false; // Don't dig when carrying flag
       } else if (fFlag && fFlag.carrier) {
         // PRIORITY 2: Friendly flag is stolen! Intercept and kill enemy carrier!
         const carrierPos = fFlag.carrier.isPlayer ? this.player.position : fFlag.carrier.bot?.position;
         if (carrierPos && bot.position.distanceTo(carrierPos) < 90) {
           bot.targetPos.copy(carrierPos);
           bot.behaviorState = 'intercept';
+          bot.isDigging = false;
         } else {
           bot.targetPos.set(eFlag.currentPos.x + bot.laneOffset, 0, eFlag.currentPos.z);
           bot.behaviorState = 'rushFlag';
@@ -1806,6 +1963,70 @@ export class Game {
         // PRIORITY 3: Ally has enemy flag! Escort teammate home!
         bot.targetPos.set(homeBasePos.x + bot.laneOffset, 0, homeBasePos.z);
         bot.behaviorState = 'escort';
+      } else if (bot.role === 'flanker') {
+        // FLANKER: Use flank routes to approach from sides
+        if (!bot.flankRoute || bot.flankProgress >= bot.flankRoute.length) {
+          // Generate new flank route
+          const side = Math.random() > 0.5 ? 1 : -1;
+          const flankDist = 40 + Math.random() * 20;
+          bot.flankRoute = [
+            { x: bot.position.x + side * 15, z: bot.position.z },
+            { x: bot.position.x + side * 20, z: (bot.position.z + eFlag.currentPos.z) / 2 },
+            { x: side * flankDist, z: eFlag.currentPos.z * 0.3 },
+          ];
+          bot.flankProgress = 0;
+        }
+        
+        const waypoint = bot.flankRoute[bot.flankProgress];
+        const distToWaypoint = Math.hypot(bot.position.x - waypoint.x, bot.position.z - waypoint.z);
+        
+        if (distToWaypoint < 5) {
+          bot.flankProgress++;
+          if (bot.flankProgress >= bot.flankRoute.length) {
+            bot.flankRoute = null;
+          }
+        }
+        
+        if (waypoint) {
+          bot.targetPos.set(waypoint.x, 0, waypoint.z);
+          bot.behaviorState = 'flanking';
+        }
+        
+        // Flankers may dig cover when under fire
+        if (bot.suppressionTimer > 0 && bot.hasSpade && !bot.isDigging && Math.random() < 0.02) {
+          bot.isDigging = true;
+          bot.digTimer = 3 + Math.random() * 2;
+          bot.digTarget = { 
+            x: Math.floor(bot.position.x), 
+            y: Math.floor(bot.position.y) - 1, 
+            z: Math.floor(bot.position.z) 
+          };
+          bot.behaviorState = 'diggingCover';
+        }
+        
+      } else if (bot.role === 'support') {
+        // SUPPORT: Stay back, provide covering fire, dig defensive positions
+        const supportDist = 35 + Math.random() * 15;
+        const angle = Math.atan2(bot.position.z - eFlag.currentPos.z, bot.position.x - eFlag.currentPos.x);
+        bot.targetPos.set(
+          eFlag.currentPos.x + Math.cos(angle) * supportDist,
+          0,
+          eFlag.currentPos.z + Math.sin(angle) * supportDist
+        );
+        bot.behaviorState = 'support';
+        
+        // Support bots dig trenches when not engaged
+        if (bot.hasSpade && !bot.isDigging && !enemyTarget && Math.random() < 0.01) {
+          bot.isDigging = true;
+          bot.digTimer = 4 + Math.random() * 3;
+          bot.digTarget = { 
+            x: Math.floor(bot.position.x), 
+            y: Math.floor(bot.position.y) - 1, 
+            z: Math.floor(bot.position.z) 
+          };
+          bot.behaviorState = 'diggingTrench';
+        }
+        
       } else if (bot.role === 'attacker') {
         // PRIORITY 4: Attacker pushes for enemy flag but waits at distance
         const distToFlag = bot.position.distanceTo(eFlag.currentPos);
@@ -1823,6 +2044,19 @@ export class Game {
           bot.targetPos.set(eFlag.currentPos.x + bot.laneOffset, 0, eFlag.currentPos.z);
           bot.behaviorState = 'rushFlag';
         }
+        
+        // Attackers dig when suppressed and have spade
+        if (bot.suppressionTimer > 0 && bot.hasSpade && !bot.isDigging && Math.random() < 0.03) {
+          bot.isDigging = true;
+          bot.digTimer = 2 + Math.random() * 2;
+          bot.digTarget = { 
+            x: Math.floor(bot.position.x), 
+            y: Math.floor(bot.position.y) - 1, 
+            z: Math.floor(bot.position.z) 
+          };
+          bot.behaviorState = 'diggingCover';
+        }
+        
       } else {
         // PRIORITY 5: Defender patrols friendly base area
         bot.moveTimer -= dt;
@@ -1833,6 +2067,43 @@ export class Game {
           bot.targetPos.set(homeBasePos.x + Math.cos(angle) * dist, 0, homeBasePos.z + Math.sin(angle) * dist);
         }
         bot.behaviorState = 'defend';
+        
+        // Defenders dig defensive trenches around base
+        if (bot.hasSpade && !bot.isDigging && !enemyTarget && Math.random() < 0.015) {
+          bot.isDigging = true;
+          bot.digTimer = 5 + Math.random() * 3;
+          bot.digTarget = { 
+            x: Math.floor(homeBasePos.x + (Math.random() - 0.5) * 20), 
+            y: Math.floor(this.world.getGroundHeight(homeBasePos.x + (Math.random() - 0.5) * 20, homeBasePos.z + (Math.random() - 0.5) * 20)) - 1, 
+            z: Math.floor(homeBasePos.z + (Math.random() - 0.5) * 20) 
+          };
+          bot.behaviorState = 'diggingTrench';
+        }
+      }
+
+      // Handle digging behavior
+      if (bot.isDigging && bot.digTarget) {
+        bot.digTimer -= dt;
+        if (bot.digTimer <= 0) {
+          // Complete digging - remove voxel
+          const { x, y, z } = bot.digTarget;
+          if (this.world.canDig(x, y, z)) {
+            this.world.setVoxel(x, y, z, 0); // Set to air
+            bot.trenchDepth++;
+            bot.isInTrench = bot.trenchDepth >= 2;
+            
+            // Dig below too for deeper trench
+            if (bot.trenchDepth % 2 === 0 && this.world.canDig(x, y - 1, z)) {
+              this.world.setVoxel(x, y - 1, z, 0);
+            }
+          }
+          
+          if (bot.digTimer <= -2) {
+            bot.isDigging = false;
+            bot.digTarget = null;
+          }
+        }
+        continue; // Skip movement while digging
       }
 
       // Movement Physics & Obstacle Handling
@@ -1845,7 +2116,8 @@ export class Game {
 
         // High responsiveness and fast movement speed
         let speed = bot.carryingFlag ? 6.5 : (bot.role === 'attacker' ? 5.8 : 4.6);
-        if (bot.isCrouching) speed = 2.5;
+        if (bot.isCrouching || bot.isInTrench) speed = 2.5;
+        if (bot.suppressionTimer > 0) speed *= 0.7; // Move slower when suppressed
 
         // Obstacle avoidance: check ground height ahead
         const probeX = bot.position.x + moveDir.x * 0.8;
@@ -1940,7 +2212,8 @@ export class Game {
       }
 
       // Combat shooting logic
-      if (enemyTarget && distToEnemy < 45) {
+      if (enemyTarget && distToEnemy < 45 && !bot.isDigging) {
+        // Don't shoot while digging
         if (bot.burstRemaining > 0) {
           bot.burstTimer -= dt;
           if (bot.burstTimer <= 0) {
