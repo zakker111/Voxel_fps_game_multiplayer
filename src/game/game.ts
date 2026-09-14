@@ -1921,7 +1921,7 @@ export class Game {
       const enemyTarget = this.findNearestEnemy(bot);
       const distToEnemy = enemyTarget ? bot.position.distanceTo(enemyTarget.pos) : Infinity;
 
-      // Update human-like psychological states
+      // Update human-like psychological states with more dynamic behavior
       if (enemyTarget && distToEnemy < 30) {
         bot.panicLevel = Math.min(1.0, bot.panicLevel + dt * 0.5);
         bot.suppressionTimer = 2.0; // Suppressed for 2 seconds when seeing enemy
@@ -1932,6 +1932,20 @@ export class Game {
         bot.confidence = Math.min(1.0, bot.confidence + dt * 0.05);
       }
       if (bot.suppressionTimer > 0) bot.suppressionTimer -= dt;
+      
+      // Low confidence bots may retreat or take cover more often
+      if (bot.confidence < 0.4 && bot.hp < 50 && !bot.carryingFlag) {
+        // Retreat behavior: move away from enemy
+        if (enemyTarget && Math.random() < 0.02) {
+          const retreatDir = bot.position.clone().sub(enemyTarget.pos).normalize();
+          bot.targetPos.set(
+            bot.position.x + retreatDir.x * 20,
+            0,
+            bot.position.z + retreatDir.z * 20
+          );
+          bot.behaviorState = 'retreating';
+        }
+      }
 
       // Memory system - remember last seen enemy position
       if (bot.lastSeenEnemy) {
@@ -2211,9 +2225,12 @@ export class Game {
         }
       }
 
-      // Combat shooting logic
+      // Combat shooting logic with aggression-based behavior
       if (enemyTarget && distToEnemy < 45 && !bot.isDigging) {
         // Don't shoot while digging
+        // More aggressive bots shoot more frequently
+        const aggressionModifier = bot.aggression * 0.3; // High aggression = faster shooting
+        
         if (bot.burstRemaining > 0) {
           bot.burstTimer -= dt;
           if (bot.burstTimer <= 0) {
@@ -2227,10 +2244,10 @@ export class Game {
             if (bot.weapon === 'smg') {
               bot.burstRemaining = 3 + Math.floor(Math.random() * 3);
               bot.burstTimer = 0;
-              bot.shootTimer = 1.0 + Math.random() * 0.8;
+              bot.shootTimer = (1.0 + Math.random() * 0.8) * (1 - aggressionModifier);
             } else {
               this.executeBotShot(bot, enemyTarget);
-              bot.shootTimer = 0.7 + Math.random() * 0.6;
+              bot.shootTimer = (0.7 + Math.random() * 0.6) * (1 - aggressionModifier);
             }
           }
         }
@@ -2259,8 +2276,16 @@ export class Game {
     const pan = Math.sin(Math.atan2(bot.position.x - this.player.position.x, bot.position.z - this.player.position.z) - this.player.yaw);
     this.sounds.playDistantShot(bot.weapon, distToPlayer, pan);
 
-    // Hit calculation
-    const hitChance = Math.max(0.25, 0.75 - dist / 60) * bot.skill;
+    // Hit calculation with skill-based accuracy and shot misses
+    // Base hit chance decreases with distance
+    const baseHitChance = Math.max(0.25, 0.75 - dist / 60);
+    // Apply bot skill (0.6-1.0)
+    const skillMultiplier = bot.skill;
+    // Apply aggression factor (more aggressive bots may shoot faster but less accurately)
+    const aggressionFactor = 1.0 - (bot.aggression - 0.5) * 0.2; // High aggression = slightly less accurate
+    // Calculate final hit chance
+    const hitChance = baseHitChance * skillMultiplier * aggressionFactor;
+    
     if (Math.random() < hitChance) {
       if (target.isPlayer) {
         const dmg = bot.weapon === 'rifle' ? 25 + Math.random() * 20 : 12 + Math.random() * 12;
