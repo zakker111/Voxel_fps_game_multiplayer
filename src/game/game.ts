@@ -98,6 +98,12 @@ interface Bot {
   flankProgress: number;
   squadId: number;
   isLeading: boolean;
+  // Building behavior properties
+  hasBlocks: boolean;
+  inventoryBlocks: number;
+  isBuilding: boolean;
+  buildTimer: number;
+  buildTarget: { x: number; y: number; z: number } | null;
 }
 
 interface Flag {
@@ -130,11 +136,11 @@ const TEAM_COLORS: Record<Team, { body: number; accent: number; legs: number; la
   blue: { body: 0x2244cc, accent: 0x4488ff, legs: 0x112266, label: 'BLUE' },
 };
 
-const BLUE_SPAWN_Z_MIN = -120;
-const BLUE_SPAWN_Z_MAX = -100;
-const RED_SPAWN_Z_MIN = 100;
-const RED_SPAWN_Z_MAX = 120;
-const SPAWN_X_RANGE = 30;
+const BLUE_SPAWN_Z_MIN = -150;
+const BLUE_SPAWN_Z_MAX = -130;
+const RED_SPAWN_Z_MIN = 130;
+const RED_SPAWN_Z_MAX = 150;
+const SPAWN_X_RANGE = 40;
 
 const BLUE_FLAG_POS = { x: 0, z: -80 };
 const RED_FLAG_POS = { x: 0, z: 80 };
@@ -774,11 +780,16 @@ export class Game {
         walkCycle: Math.random() * Math.PI * 2,
         // Human-like behavior initialization
         hasSpade,
+        hasBlocks: Math.random() > 0.5, // 50% of bots have building blocks
+        inventoryBlocks: Math.floor(Math.random() * 20) + 10,
         isDigging: false,
         digTimer: 0,
         digTarget: null,
         trenchDepth: 0,
         isInTrench: false,
+        isBuilding: false,
+        buildTimer: 0,
+        buildTarget: null,
         panicLevel: 0,
         confidence: 0.7 + Math.random() * 0.3,
         suppressionTimer: 0,
@@ -1133,6 +1144,12 @@ export class Game {
     this.networkClient.onMessage('spectatorToggled', (msg: any) => {
       // Track remote player spectator state (for future use)
       console.log(`Player ${msg.playerId} ${msg.isSpectating ? 'entered' : 'exited'} spectator mode`);
+    });
+
+    this.networkClient.onMessage('footstep', (msg: any) => {
+      // Play footstep sound for other players using SoundManager
+      const pan = Math.sin(Math.atan2(msg.position?.x || 0, msg.position?.z || 0) - this.player.yaw);
+      this.sounds.playFootstepRemote(msg.volume, msg.pitch, pan);
     });
 
     this.networkClient.connect().catch((err) => {
@@ -1839,18 +1856,31 @@ export class Game {
     let nearest: { pos: THREE.Vector3; isPlayer: boolean; bot?: Bot } | null = null;
     let nearestDist = Infinity;
 
+    // Get bot's forward direction vector
+    const botForward = new THREE.Vector3(Math.sin(bot.mesh.rotation.y), 0, Math.cos(bot.mesh.rotation.y));
+
     // Prioritize enemy flag carrier if our team's flag is stolen!
     const friendlyFlag = bot.team === 'blue' ? this.blueFlag : this.redFlag;
     if (friendlyFlag && friendlyFlag.carrier) {
       if (friendlyFlag.carrier.isPlayer && bot.team !== this.playerTeam && !this.player.isDead) {
         const dist = bot.position.distanceTo(this.player.position);
         if (dist < 75) {
-          return { pos: this.player.position.clone(), isPlayer: true };
+          // Check if enemy is in front of bot (field of view check)
+          const toEnemy = this.player.position.clone().sub(bot.position).normalize();
+          const dotProduct = botForward.dot(toEnemy);
+          if (dotProduct > 0.3) { // ~72 degree field of view
+            return { pos: this.player.position.clone(), isPlayer: true };
+          }
         }
       } else if (friendlyFlag.carrier.bot && !friendlyFlag.carrier.bot.isDead && friendlyFlag.carrier.bot.team !== bot.team) {
         const dist = bot.position.distanceTo(friendlyFlag.carrier.bot.position);
         if (dist < 75) {
-          return { pos: friendlyFlag.carrier.bot.position.clone(), isPlayer: false, bot: friendlyFlag.carrier.bot };
+          // Check if enemy is in front of bot (field of view check)
+          const toEnemy = friendlyFlag.carrier.bot.position.clone().sub(bot.position).normalize();
+          const dotProduct = botForward.dot(toEnemy);
+          if (dotProduct > 0.3) { // ~72 degree field of view
+            return { pos: friendlyFlag.carrier.bot.position.clone(), isPlayer: false, bot: friendlyFlag.carrier.bot };
+          }
         }
       }
     }
@@ -1859,8 +1889,13 @@ export class Game {
     if (bot.team !== this.playerTeam && !this.player.isDead) {
       const dist = bot.position.distanceTo(this.player.position);
       if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest = { pos: this.player.position.clone(), isPlayer: true };
+        // Check if player is in front of bot (field of view check)
+        const toPlayer = this.player.position.clone().sub(bot.position).normalize();
+        const dotProduct = botForward.dot(toPlayer);
+        if (dotProduct > 0.3) { // ~72 degree field of view
+          nearestDist = dist;
+          nearest = { pos: this.player.position.clone(), isPlayer: true };
+        }
       }
     }
 
@@ -1869,8 +1904,13 @@ export class Game {
       if (otherBot === bot || otherBot.isDead || otherBot.team === bot.team) continue;
       const dist = bot.position.distanceTo(otherBot.position);
       if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest = { pos: otherBot.position.clone(), isPlayer: false, bot: otherBot };
+        // Check if enemy bot is in front of bot (field of view check)
+        const toEnemy = otherBot.position.clone().sub(bot.position).normalize();
+        const dotProduct = botForward.dot(toEnemy);
+        if (dotProduct > 0.3) { // ~72 degree field of view
+          nearestDist = dist;
+          nearest = { pos: otherBot.position.clone(), isPlayer: false, bot: otherBot };
+        }
       }
     }
 
@@ -2015,7 +2055,15 @@ export class Game {
             y: Math.floor(bot.position.y) - 1, 
             z: Math.floor(bot.position.z) 
           };
-          bot.behaviorState = 'diggingCover';
+        } else if (!bot.isDigging && bot.suppressionTimer > 0 && Math.random() < 0.015 && bot.inventoryBlocks && bot.inventoryBlocks > 0) {
+          // Build cover when suppressed and have blocks
+          bot.isBuilding = true;
+          bot.buildTimer = 3 + Math.random() * 2;
+          bot.buildTarget = { 
+            x: Math.floor(bot.position.x + (Math.random() - 0.5) * 2), 
+            y: Math.floor(bot.position.y), 
+            z: Math.floor(bot.position.z + (Math.random() - 0.5) * 2) 
+          };
         }
         
       } else if (bot.role === 'support') {
@@ -2110,6 +2158,11 @@ export class Game {
             if (bot.trenchDepth % 2 === 0 && this.world.canDig(x, y - 1, z)) {
               this.world.setVoxel(x, y - 1, z, 0);
             }
+            
+            // Send dig command to server in online mode
+            if (this.gameMode === 'online' && this.networkClient && this.networkClient.isConnected()) {
+              this.networkClient.send({ type: 'useTool', tool: 'spade', target: { x, y, z } });
+            }
           }
           
           if (bot.digTimer <= -2) {
@@ -2118,6 +2171,30 @@ export class Game {
           }
         }
         continue; // Skip movement while digging
+      }
+
+      // Handle building behavior
+      if (bot.isBuilding && bot.buildTarget) {
+        bot.buildTimer -= dt;
+        if (bot.buildTimer <= 0) {
+          // Complete building - place voxel
+          const { x, y, z } = bot.buildTarget;
+          if (this.world.canBuild(x, y, z) && bot.inventoryBlocks > 0) {
+            this.world.setVoxel(x, y, z, VOXEL_BUILT); // Place built block
+            bot.inventoryBlocks--;
+            
+            // Send build command to server in online mode
+            if (this.gameMode === 'online' && this.networkClient && this.networkClient.isConnected()) {
+              this.networkClient.sendBuild({ x, y, z });
+            }
+          }
+          
+          if (bot.buildTimer <= -1) {
+            bot.isBuilding = false;
+            bot.buildTarget = null;
+          }
+        }
+        continue; // Skip movement while building
       }
 
       // Movement Physics & Obstacle Handling

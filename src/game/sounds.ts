@@ -348,4 +348,32 @@ export class SoundManager {
   flagCapture() {
     this.capture();
   }
+
+  // Footstep sound for remote players in multiplayer
+  playFootstepRemote(volume: number, pitch: number, pan: number) {
+    if (!this.enabled || !this.audioContext) return;
+    
+    const panner = this.audioContext.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    
+    // Create footstep sound with noise and tone
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    
+    osc.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.audioContext.destination);
+    
+    osc.frequency.value = 100 + pitch * 50;
+    osc.type = 'triangle';
+    
+    gain.gain.setValueAtTime(volume * 0.3, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.1);
+    
+    osc.start();
+    osc.stop(this.audioContext.currentTime + 0.1);
+    
+    // Add noise layer for footstep texture
+    this.playSpatialNoise(0.08, volume * 0.2, pan);
+  }
 }

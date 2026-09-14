@@ -155,6 +155,16 @@ export class ServerGame {
         console.log(`Player ${playerId} ${player.isSpectating ? 'entered' : 'exited'} spectator mode`);
         break;
 
+      case 'footstep':
+        // Broadcast footstep sound to all players except the sender
+        this.broadcastExcept(playerId, {
+          type: 'footstep',
+          playerId,
+          volume: message.volume,
+          pitch: message.pitch,
+        });
+        break;
+
       case 'disconnect':
         this.removePlayer(playerId);
         break;
@@ -583,6 +593,17 @@ export class ServerGame {
     // Update all players
     for (const player of this.players.values()) {
       player.update(dt, this.world);
+      
+      // Check and broadcast footstep sounds
+      const footstepData = player.getFootstepData(this.world);
+      if (footstepData) {
+        this.broadcastExcept(player.id, {
+          type: 'footstep',
+          playerId: player.id,
+          volume: footstepData.volume,
+          pitch: footstepData.pitch,
+        });
+      }
     }
     
     // Update dropped flag timers

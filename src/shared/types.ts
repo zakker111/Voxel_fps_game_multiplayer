@@ -55,6 +55,7 @@ export type ClientMessage =
   | { type: 'reload' }
   | { type: 'pickupFlag' }
   | { type: 'toggleSpectator' }
+  | { type: 'footstep'; volume: number; pitch: number }
   | { type: 'disconnect' };
 
 export interface PlayerInput {
@@ -89,7 +90,8 @@ export type ServerMessage =
   | { type: 'flagPickedUp'; playerId: string; flagTeam: 'red' | 'blue' }
   | { type: 'flagDropped'; position: Position; flagTeam: 'red' | 'blue' }
   | { type: 'flagReturned'; flagTeam: 'red' | 'blue' }
-  | { type: 'spectatorToggled'; playerId: string; isSpectating: boolean };
+  | { type: 'spectatorToggled'; playerId: string; isSpectating: boolean }
+  | { type: 'footstep'; playerId: string; volume: number; pitch: number };
 
 export interface GameState {
   players: Map<string, PlayerState>;
@@ -130,11 +132,11 @@ export const TOOLS = {
   spade: { damage: 3, cooldown: 0.3, harvests: false, affectsMultiple: true },
 };
 
-export const BLUE_SPAWN_Z_MIN = -100;
-export const BLUE_SPAWN_Z_MAX = -90;
-export const RED_SPAWN_Z_MIN = 90;
-export const RED_SPAWN_Z_MAX = 100;
-export const SPAWN_X_RANGE = 20;
+export const BLUE_SPAWN_Z_MIN = -150;
+export const BLUE_SPAWN_Z_MAX = -130;
+export const RED_SPAWN_Z_MIN = 130;
+export const RED_SPAWN_Z_MAX = 150;
+export const SPAWN_X_RANGE = 40;
 
 export const BLUE_FLAG_POS = { x: 0, z: -80 };
 export const RED_FLAG_POS = { x: 0, z: 80 };

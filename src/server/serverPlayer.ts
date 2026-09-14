@@ -31,6 +31,10 @@ export class ServerPlayer {
   carryingFlag: boolean = false;
   isSpectating: boolean = false;
   
+  // Footstep sound tracking
+  lastFootstepTime: number = 0;
+  footstepInterval: number = 0.5; // Base interval between footsteps in seconds
+  
   // Magazine system
   currentAmmo: number = 10;
   magazineSize: number = 10;
@@ -98,6 +102,54 @@ export class ServerPlayer {
   update(dt: number, world: ServerWorld): void {
     if (this.isDead) return;
     this.updateReload();
+    
+    // Check for footstep generation
+    if (this.shouldPlayFootstep(dt, world)) {
+      this.lastFootstepTime = world.serverTime;
+      // Footstep will be sent via serverGame broadcast
+    }
+  }
+  
+  private shouldPlayFootstep(dt: number, world: ServerWorld): boolean {
+    // Only play footsteps when moving and grounded
+    const moveSpeed = Math.sqrt(this.input.moveX * this.input.moveX + this.input.moveZ * this.input.moveZ);
+    if (moveSpeed < 0.1 || !this.isGrounded) return false;
+    
+    // Calculate interval based on sprinting and crouching
+    let interval = this.footstepInterval;
+    if (this.isSprinting) {
+      interval *= 0.6; // Faster footsteps when sprinting
+    } else if (this.isCrouching) {
+      interval *= 1.5; // Slower footsteps when crouching
+    }
+    
+    // Check if enough time has passed since last footstep
+    const timeSinceLastStep = world.serverTime - this.lastFootstepTime;
+    if (timeSinceLastStep >= interval) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  getFootstepData(world: ServerWorld): { volume: number; pitch: number } | null {
+    if (!this.isGrounded) return null;
+    
+    const moveSpeed = Math.sqrt(this.input.moveX * this.input.moveX + this.input.moveZ * this.input.moveZ);
+    if (moveSpeed < 0.1) return null;
+    
+    // Volume based on movement speed and stance
+    let volume = 0.3; // Base volume
+    if (this.isSprinting) {
+      volume = 0.8; // Louder when sprinting
+    } else if (this.isCrouching) {
+      volume = 0.15; // Quieter when crouching
+    }
+    
+    // Add some randomness to pitch
+    const pitch = 0.9 + Math.random() * 0.2; // 0.9 to 1.1
+    
+    return { volume, pitch };
   }
 
   private checkCollision(x: number, y: number, z: number, height: number, world: ServerWorld): boolean {
