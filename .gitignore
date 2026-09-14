@@ -1,13 +1,20 @@
 ```
-# Dependencies
-node_modules/
-package-lock.json
-
 # Build artifacts
 dist/
 build/
-*.js.map
-*.ts.map
+*.js
+
+# Dependencies
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
 
 # Environment
 .env
@@ -17,60 +24,19 @@ build/
 # Editors
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Logs
-*.log
-
-# Temp files
-*.tmp
+# OS
+.DS_Store
+Thumbs.db
 
 # Coverage
 coverage/
 htmlcov/
 .coverage
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-.pytest_cache/
-.mypy_cache/
-
-# Distribution / packaging
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.git/
-
-# Unit test / coverage reports
-coverage/
-.coverage
-*.cover
-*.log
-
-# Transpiled JavaScript
-lib/
-es5/
-
-# System
-.DS_Store
-Thumbs.db
-
-# Compression
+# Compressed files
 *.zip
 *.gz
 *.tar
@@ -89,8 +55,4 @@ Thumbs.db
 *.Z
 *.lz
 *.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
 ```
