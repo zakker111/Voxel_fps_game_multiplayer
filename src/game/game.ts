@@ -113,11 +113,11 @@ const TEAM_COLORS: Record<Team, { body: number; accent: number; legs: number; la
   blue: { body: 0x2244cc, accent: 0x4488ff, legs: 0x112266, label: 'BLUE' },
 };
 
-const BLUE_SPAWN_Z_MIN = -100;
-const BLUE_SPAWN_Z_MAX = -90;
-const RED_SPAWN_Z_MIN = 90;
-const RED_SPAWN_Z_MAX = 100;
-const SPAWN_X_RANGE = 20;
+const BLUE_SPAWN_Z_MIN = -120;
+const BLUE_SPAWN_Z_MAX = -100;
+const RED_SPAWN_Z_MIN = 100;
+const RED_SPAWN_Z_MAX = 120;
+const SPAWN_X_RANGE = 30;
 
 const BLUE_FLAG_POS = { x: 0, z: -80 };
 const RED_FLAG_POS = { x: 0, z: 80 };
@@ -1188,6 +1188,12 @@ export class Game {
   }
 
   private onMouseMove(e: MouseEvent): void {
+    if (this.isSpectating) {
+      // Spectator mode: rotate camera with mouse
+      this.spectatorAngle -= e.movementX * 0.003;
+      // Also allow looking up/down by adjusting a pitch variable if needed
+      return;
+    }
     if (document.pointerLockElement) {
       this.player.handleMouseMove(e.movementX, e.movementY);
     } else if (this.isMouseDown) {
@@ -1781,7 +1787,7 @@ export class Game {
       const enemyTarget = this.findNearestEnemy(bot);
       const distToEnemy = enemyTarget ? bot.position.distanceTo(enemyTarget.pos) : Infinity;
 
-      // Tactical decision making
+      // Tactical decision making with more patience
       if (bot.carryingFlag) {
         // PRIORITY 1: Bot is carrying enemy flag - rush straight home to capture!
         bot.targetPos.set(homeBasePos.x + bot.laneOffset * 0.3, 0, homeBasePos.z);
@@ -1801,16 +1807,29 @@ export class Game {
         bot.targetPos.set(homeBasePos.x + bot.laneOffset, 0, homeBasePos.z);
         bot.behaviorState = 'escort';
       } else if (bot.role === 'attacker') {
-        // PRIORITY 4: Attacker pushes for enemy flag!
-        bot.targetPos.set(eFlag.currentPos.x + bot.laneOffset, 0, eFlag.currentPos.z);
-        bot.behaviorState = 'rushFlag';
+        // PRIORITY 4: Attacker pushes for enemy flag but waits at distance
+        const distToFlag = bot.position.distanceTo(eFlag.currentPos);
+        if (distToFlag < 25) {
+          // Too close, back off and patrol around
+          const angle = Math.atan2(bot.position.z - eFlag.currentPos.z, bot.position.x - eFlag.currentPos.x);
+          const holdDist = 25 + Math.random() * 10;
+          bot.targetPos.set(
+            eFlag.currentPos.x + Math.cos(angle) * holdDist,
+            0,
+            eFlag.currentPos.z + Math.sin(angle) * holdDist
+          );
+          bot.behaviorState = 'patrol';
+        } else {
+          bot.targetPos.set(eFlag.currentPos.x + bot.laneOffset, 0, eFlag.currentPos.z);
+          bot.behaviorState = 'rushFlag';
+        }
       } else {
         // PRIORITY 5: Defender patrols friendly base area
         bot.moveTimer -= dt;
         if (bot.moveTimer <= 0) {
-          bot.moveTimer = 2 + Math.random() * 2;
+          bot.moveTimer = 3 + Math.random() * 3;
           const angle = Math.random() * Math.PI * 2;
-          const dist = 6 + Math.random() * 14;
+          const dist = 8 + Math.random() * 16;
           bot.targetPos.set(homeBasePos.x + Math.cos(angle) * dist, 0, homeBasePos.z + Math.sin(angle) * dist);
         }
         bot.behaviorState = 'defend';
