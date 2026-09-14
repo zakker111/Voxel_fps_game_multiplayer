@@ -1,38 +1,27 @@
+```
 # Dependencies
 node_modules/
-package-lock.json
 
-# Build output
+# Build outputs
 dist/
 build/
+*.js.map
+*.css.map
 
-# Environment variables
+# Environment
 .env
 .env.local
-.env.production
+.env.*
 
-# IDE
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
 
 # Logs
-logs/
 *.log
-npm-debug.log*
 
-# Testing
-coverage/
-.nyc_output/
-
-# Misc
-.cache/
-.temp/
-tmp/
-.next/
+# Temp files
+*.tmp
+```
