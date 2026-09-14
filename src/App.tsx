@@ -11,10 +11,20 @@ function App() {
     blueKills: 0, redKills: 0, blueCaptures: 0, redCaptures: 0, isAiming: false,
     currentAmmo: 10, magazineSize: 10, isReloading: false,
     playerCarryingFlag: false, flagCarrierName: '',
+    isSpectating: false,
   });
   const [started, setStarted] = useState(false);
   const [gameMode, setGameMode] = useState<'multiplayer' | 'singleplayer' | 'online' | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<'red' | 'blue'>('blue');
+  const [isPointerLocked, setIsPointerLocked] = useState(false);
+
+  useEffect(() => {
+    const handleLockChange = () => {
+      setIsPointerLocked(!!document.pointerLockElement);
+    };
+    document.addEventListener('pointerlockchange', handleLockChange);
+    return () => document.removeEventListener('pointerlockchange', handleLockChange);
+  }, []);
 
   useEffect(() => {
     if (!canvasRef.current || gameRef.current || !gameMode) return;
@@ -32,18 +42,12 @@ function App() {
     setTimeout(() => {
       if (!canvasRef.current || gameRef.current) return;
       
-      const game = new Game(canvasRef.current, gameMode);
+      const game = new Game(canvasRef.current, gameMode, selectedTeam);
       game.onStateChange = (state) => setGameState(state);
-      
-      // Set team for online multiplayer
-      if (gameMode === 'online') {
-        game.playerTeam = selectedTeam;
-        game.player.team = selectedTeam;
-      }
       
       game.start();
       gameRef.current = game;
-      console.log('Game created and started');
+      console.log('Game created and started with mode:', gameMode, 'team:', selectedTeam);
       
       // Auto-start when game is created
       game.requestPointerLock(canvasRef.current);
@@ -59,7 +63,8 @@ function App() {
     };
   }, [gameMode, selectedTeam]);
 
-  const handleStart = (mode: 'multiplayer' | 'singleplayer' | 'online') => {
+  const handleStart = (mode: 'multiplayer' | 'singleplayer' | 'online', team: 'red' | 'blue' = 'blue') => {
+    setSelectedTeam(team);
     setGameMode(mode);
   };
 
@@ -91,49 +96,27 @@ function App() {
             <h1 className="text-5xl font-bold text-white mb-3">🎮 Voxel FPS</h1>
             <p className="text-lg text-gray-300 mb-1">Red vs Blue — Capture the Flag</p>
             <p className="text-sm text-gray-400 mb-6">You are <span className="text-blue-400 font-bold">BLUE</span> team. Push to the <span className="text-red-400 font-bold">RED</span> flag!</p>
-            <div className="flex gap-4 justify-center mb-6">
-              <button onClick={() => handleStart('multiplayer')} className="px-8 py-4 bg-[#00ff88] text-black font-bold text-xl rounded-xl hover:bg-[#00cc66] transition-colors">
-                🤖 With Bots
+            <div className="flex flex-wrap gap-3 justify-center mb-6">
+              <button onClick={() => handleStart('multiplayer', 'blue')} className="px-6 py-3.5 bg-[#00ff88] text-black font-bold text-lg rounded-xl hover:bg-[#00cc66] transition-colors shadow-lg cursor-pointer">
+                🤖 Play vs Bots
               </button>
-              <button onClick={() => handleStart('online')} className="px-8 py-4 bg-purple-600 text-white font-bold text-xl rounded-xl hover:bg-purple-700 transition-colors">
-                🌐 Online Multiplayer
+              <button onClick={() => handleStart('online', 'blue')} className="px-6 py-3.5 bg-blue-600 text-white font-bold text-lg rounded-xl hover:bg-blue-500 transition-colors shadow-lg cursor-pointer flex items-center gap-2">
+                <span>🌐</span> Join Online (Blue Team)
               </button>
-              <button onClick={() => handleStart('singleplayer')} className="px-8 py-4 bg-blue-600 text-white font-bold text-xl rounded-xl hover:bg-blue-700 transition-colors">
-                🧪 Singleplayer
+              <button onClick={() => handleStart('online', 'red')} className="px-6 py-3.5 bg-red-600 text-white font-bold text-lg rounded-xl hover:bg-red-500 transition-colors shadow-lg cursor-pointer flex items-center gap-2">
+                <span>🌐</span> Join Online (Red Team)
+              </button>
+              <button onClick={() => { handleStart('multiplayer'); setTimeout(() => gameRef.current?.toggleSpectator(), 300); }} className="px-6 py-3.5 bg-indigo-600 text-white font-bold text-lg rounded-xl hover:bg-indigo-500 transition-colors shadow-lg cursor-pointer flex items-center gap-2">
+                <span>🎥</span> AI Spectator
+              </button>
+              <button onClick={() => handleStart('singleplayer')} className="px-5 py-3.5 bg-gray-700 text-gray-200 font-bold text-base rounded-xl hover:bg-gray-600 transition-colors shadow-lg cursor-pointer">
+                🧪 Free Sandbox
               </button>
             </div>
             
-            {/* Team selection for online mode */}
-            {gameMode === 'online' && !started && (
-              <div className="mb-6 bg-gray-900/60 rounded-xl p-4 max-w-md mx-auto">
-                <h3 className="text-white font-bold mb-3 text-center">Select Your Team</h3>
-                <div className="flex gap-4 justify-center">
-                  <button 
-                    onClick={() => setSelectedTeam('blue')}
-                    className={`px-6 py-3 rounded-xl font-bold text-lg transition-all ${
-                      selectedTeam === 'blue' 
-                        ? 'bg-blue-600 text-white ring-4 ring-blue-400' 
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    🔵 Blue Team
-                  </button>
-                  <button 
-                    onClick={() => setSelectedTeam('red')}
-                    className={`px-6 py-3 rounded-xl font-bold text-lg transition-all ${
-                      selectedTeam === 'red' 
-                        ? 'bg-red-600 text-white ring-4 ring-red-400' 
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    🔴 Red Team
-                  </button>
-                </div>
-                <p className="text-gray-400 text-xs text-center mt-3">
-                  {selectedTeam === 'blue' ? 'Spawn at south, push north to capture red flag' : 'Spawn at north, push south to capture blue flag'}
-                </p>
-              </div>
-            )}
+            <p className="text-xs text-purple-300/80 mb-2">
+              💡 <b>Multiplayer Testing:</b> Open this app in 2 browser tabs or windows, choose Blue on one and Red on the other!
+            </p>
             <div className="mt-6 bg-gray-900/60 rounded-xl p-5 text-left max-w-xl mx-auto text-sm">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -173,6 +156,61 @@ function App() {
 
       {started && (
         <>
+          {/* Quick Preview & Spectator Toolbar (Top Left) */}
+          <div className="absolute top-4 left-4 z-40 flex items-center gap-2">
+            {!isPointerLocked && !gameState.isSpectating && (
+              <div 
+                onClick={handleCanvasClick}
+                className="bg-gray-900/90 backdrop-blur-md px-3.5 py-2 rounded-xl border border-gray-700 text-xs text-gray-300 flex items-center gap-2 cursor-pointer hover:bg-gray-800 transition-colors shadow-lg"
+                title="Click anywhere to lock pointer aim"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span><b>Click Canvas</b> to Lock Aim</span>
+                <span className="text-gray-500">|</span>
+                <span className="text-gray-400">Drag/Arrows to turn</span>
+              </div>
+            )}
+            
+            <button
+              onClick={() => gameRef.current?.toggleSpectator()}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg cursor-pointer ${
+                gameState.isSpectating
+                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white ring-2 ring-indigo-400'
+                  : 'bg-gray-900/80 hover:bg-gray-800 text-gray-300 border border-gray-700'
+              }`}
+            >
+              <span>🎥</span>
+              <span>{gameState.isSpectating ? 'Exit Spectator (P)' : 'Spectate AI (P)'}</span>
+            </button>
+          </div>
+
+          {/* Spectator Mode Active Banner */}
+          {gameState.isSpectating && (
+            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 bg-indigo-950/80 border border-indigo-500/50 backdrop-blur-md px-5 py-2 rounded-full shadow-2xl flex items-center gap-2 text-xs text-indigo-200">
+              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping"></span>
+              <span>🎥 <b>SPECTATOR CAMERA ACTIVE</b> — Tracking live battle action & flag carriers (Press <b>P</b> to play)</span>
+            </div>
+          )}
+
+          {/* Online Multiplayer Live Status */}
+          {gameMode === 'online' && (
+            <div className="absolute top-4 right-4 z-30 flex flex-col items-end gap-1.5">
+              <div className="bg-gray-900/90 backdrop-blur-md px-3.5 py-2 rounded-xl border border-purple-500/50 shadow-xl flex items-center gap-2.5 text-xs text-white">
+                <span className={`w-2.5 h-2.5 rounded-full ${gameState.isNetworkConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+                <span className="font-semibold">
+                  {gameState.isNetworkConnected ? `Live Server: ${gameState.connectedPlayersCount || 1} Player${(gameState.connectedPlayersCount || 1) > 1 ? 's' : ''}` : 'Connecting to Server...'}
+                </span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${selectedTeam === 'blue' ? 'bg-blue-950 text-blue-300 border border-blue-800' : 'bg-red-950 text-red-300 border border-red-800'}`}>
+                  {selectedTeam} Team
+                </span>
+              </div>
+              {(gameState.connectedPlayersCount || 1) <= 1 && (
+                <div className="bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-gray-700 text-[11px] text-gray-300 max-w-xs text-right">
+                  💡 Open in a 2nd tab/window to test 1v1 PvP & flags!
+                </div>
+              )}
+            </div>
+          )}
           {/* Scoreboard - only in multiplayer */}
           {(gameMode === 'multiplayer' || gameMode === 'online') && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
@@ -309,14 +347,15 @@ function App() {
             </div>
           </div>
 
-          {/* Hit marker */}
+          {/* Hit marker - flashes red on target hit, auto-fades */}
           {gameState.hitMarker && (
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30">
               <div className="w-6 h-6 relative">
-                <div className="absolute top-0 left-0 w-2 h-0.5 bg-red-500 rotate-45 origin-left"></div>
-                <div className="absolute top-0 right-0 w-2 h-0.5 bg-red-500 -rotate-45 origin-right"></div>
-                <div className="absolute bottom-0 left-0 w-2 h-0.5 bg-red-500 -rotate-45 origin-left"></div>
-                <div className="absolute bottom-0 right-0 w-2 h-0.5 bg-red-500 rotate-45 origin-right"></div>
+                <div className="absolute top-0 left-0 w-2.5 h-0.5 bg-red-500 shadow-[0_0_6px_#ef4444] rotate-45 origin-left"></div>
+                <div className="absolute top-0 right-0 w-2.5 h-0.5 bg-red-500 shadow-[0_0_6px_#ef4444] -rotate-45 origin-right"></div>
+                <div className="absolute bottom-0 left-0 w-2.5 h-0.5 bg-red-500 shadow-[0_0_6px_#ef4444] -rotate-45 origin-left"></div>
+                <div className="absolute bottom-0 right-0 w-2.5 h-0.5 bg-red-500 shadow-[0_0_6px_#ef4444] rotate-45 origin-right"></div>
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ef4444]"></div>
               </div>
             </div>
           )}

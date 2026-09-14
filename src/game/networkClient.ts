@@ -119,16 +119,26 @@ export class NetworkClient {
   }
 
   // Helper methods for common messages
-  sendJoin(team: 'red' | 'blue'): void {
-    this.send({ type: 'join', team });
+  sendJoin(team: 'red' | 'blue', position?: Position): void {
+    this.send({ type: 'join', team, position });
   }
 
   sendPlayerInput(input: PlayerInput): void {
     this.send({ type: 'playerInput', input });
   }
 
-  sendShoot(origin: Position, direction: Position): void {
-    this.send({ type: 'shoot', origin, direction });
+  sendShoot(origin: Position, direction: Position, hitTarget?: { targetId: string; isHeadshot: boolean }): void {
+    this.send({
+      type: 'shoot',
+      origin,
+      direction,
+      targetId: hitTarget?.targetId,
+      isHeadshot: hitTarget?.isHeadshot,
+    });
+  }
+
+  sendReload(): void {
+    this.send({ type: 'reload' });
   }
 
   sendUseTool(tool: 'pickaxe' | 'spade', target: Position): void {

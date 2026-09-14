@@ -1,12 +1,16 @@
 {
-  "name": "sandbox-workspace",
-  "private": true,
+  "name": "voxel-fps",
+  "version": "1.0.0",
+  "description": "Fast-paced 3D Voxel FPS Capture The Flag multiplayer game with destructible terrain, WW2 weapons, and tactical AI bots built with Three.js, React, and TypeScript.",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
+    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
     "server": "node dist/server.cjs"
   },
   "dependencies": {

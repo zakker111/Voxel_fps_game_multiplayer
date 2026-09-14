@@ -47,9 +47,9 @@ export interface ChunkData {
 
 // Client -> Server messages
 export type ClientMessage =
-  | { type: 'join'; team: 'red' | 'blue' }
+  | { type: 'join'; team: 'red' | 'blue'; position?: Position }
   | { type: 'playerInput'; input: PlayerInput }
-  | { type: 'shoot'; origin: Position; direction: Position }
+  | { type: 'shoot'; origin: Position; direction: Position; targetId?: string; isHeadshot?: boolean }
   | { type: 'useTool'; tool: 'pickaxe' | 'spade'; target: Position }
   | { type: 'build'; position: Position }
   | { type: 'reload' }
@@ -64,14 +64,19 @@ export interface PlayerInput {
   sprint: boolean;
   yaw: number;
   pitch: number;
+  position?: Position;
+  equipment?: 'rifle' | 'smg' | 'pickaxe' | 'spade';
+  isAiming?: boolean;
 }
 
 // Server -> Client messages
 export type ServerMessage =
+  | { type: 'init'; playerId: string; state: PlayerState; players: Array<{ id: string; state: PlayerState }>; scores: { red: number; blue: number }; captures: { red: number; blue: number }; inventory?: number; voxelChanges?: VoxelChange[] }
   | { type: 'gameState'; state: GameState }
   | { type: 'playerJoined'; playerId: string; state: PlayerState }
   | { type: 'playerLeft'; playerId: string }
   | { type: 'playerUpdated'; playerId: string; state: PlayerState }
+  | { type: 'playerShot'; playerId: string; origin: Position; direction: Position; weapon: string }
   | { type: 'voxelChanged'; change: VoxelChange }
   | { type: 'chunkUpdated'; chunk: ChunkData }
   | { type: 'playerDamaged'; playerId: string; damage: number; attackerId?: string }
@@ -119,6 +124,15 @@ export const WEAPONS = {
 };
 
 export const TOOLS = {
-  pickaxe: { damage: 1, cooldown: 0.5, harvests: true },
+  pickaxe: { damage: 3, cooldown: 0.5, harvests: true },
   spade: { damage: 3, cooldown: 0.3, harvests: false, affectsMultiple: true },
 };
+
+export const BLUE_SPAWN_Z_MIN = -100;
+export const BLUE_SPAWN_Z_MAX = -90;
+export const RED_SPAWN_Z_MIN = 90;
+export const RED_SPAWN_Z_MAX = 100;
+export const SPAWN_X_RANGE = 20;
+
+export const BLUE_FLAG_POS = { x: 0, z: -80 };
+export const RED_FLAG_POS = { x: 0, z: 80 };

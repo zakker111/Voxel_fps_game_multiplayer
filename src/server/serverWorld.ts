@@ -25,9 +25,13 @@ interface Chunk {
 
 export class ServerWorld {
   private chunks: Map<string, Chunk> = new Map();
+  private modifiedVoxels: Map<string, VoxelChange> = new Map();
+  private isGeneratingTerrain: boolean = false;
 
   constructor() {
+    this.isGeneratingTerrain = true;
     this.generateTerrain();
+    this.isGeneratingTerrain = false;
     console.log('Server world initialized');
   }
 
@@ -96,6 +100,11 @@ export class ServerWorld {
     
     chunk.dirty = true;
     
+    // Track persistent voxel modifications for late-joining players
+    if (!this.isGeneratingTerrain) {
+      this.modifiedVoxels.set(this.getVoxelKey(x, y, z), { x, y, z, type, durability });
+    }
+
     // Mark neighboring chunks dirty if on edge
     const localX = x - chunkX * CHUNK_SIZE;
     const localZ = z - chunkZ * CHUNK_SIZE;
@@ -104,6 +113,10 @@ export class ServerWorld {
     if (localX === CHUNK_SIZE - 1) this.markChunkDirty(chunkX + 1, chunkZ);
     if (localZ === 0) this.markChunkDirty(chunkX, chunkZ - 1);
     if (localZ === CHUNK_SIZE - 1) this.markChunkDirty(chunkX, chunkZ + 1);
+  }
+
+  getModifiedVoxels(): VoxelChange[] {
+    return Array.from(this.modifiedVoxels.values());
   }
 
   private markChunkDirty(chunkX: number, chunkZ: number): void {
@@ -213,62 +226,124 @@ export class ServerWorld {
     return null;
   }
 
-  collapseDisconnected(): VoxelChange[] {
+  collapseDisconnected(destroyedX?: number, destroyedY?: number, destroyedZ?: number): VoxelChange[] {
+    if (destroyedX === undefined || destroyedY === undefined || destroyedZ === undefined) {
+      return [];
+    }
+
+    const toCollapse: string[] = [];
+    const checked = new Set<string>();
+    
+    // Check all 6 neighbors of the destroyed voxel
+    const neighbors = [
+      [destroyedX + 1, destroyedY, destroyedZ],
+      [destroyedX - 1, destroyedY, destroyedZ],
+      [destroyedX, destroyedY + 1, destroyedZ],
+      [destroyedX, destroyedY - 1, destroyedZ],
+      [destroyedX, destroyedY, destroyedZ + 1],
+      [destroyedX, destroyedY, destroyedZ - 1],
+    ];
+
+    for (const [nx, ny, nz] of neighbors) {
+      const voxel = this.getVoxel(nx, ny, nz);
+      if (!voxel || voxel.type === VOXEL_AIR) continue;
+      
+      const key = this.getVoxelKey(nx, ny, nz);
+      if (checked.has(key)) continue;
+      
+      // Check if this voxel has support (path to ground within 12 blocks)
+      if (!this.hasSupport(nx, ny, nz, 12)) {
+        this.findUnsupportedChain(nx, ny, nz, toCollapse, checked);
+      }
+    }
+
     const changes: VoxelChange[] = [];
-    const visited = new Set<string>();
-    const queue: string[] = [];
-
-    // Find all voxels connected to ground (y=0)
-    for (const [chunkKey, chunk] of this.chunks) {
-      for (const [voxelKey, voxel] of chunk.voxels) {
-        const [x, y, z] = voxelKey.split(',').map(Number);
-        
-        if (y === 0 && voxel.type !== VOXEL_AIR) {
-          visited.add(voxelKey);
-          queue.push(voxelKey);
-        }
-      }
-    }
-
-    // BFS to find all connected voxels
-    while (queue.length > 0) {
-      const key = queue.shift()!;
-      const [x, y, z] = key.split(',').map(Number);
-
-      const neighbors = [
-        [x + 1, y, z], [x - 1, y, z],
-        [x, y + 1, z], [x, y - 1, z],
-        [x, y, z + 1], [x, y, z - 1],
-      ];
-
-      for (const [nx, ny, nz] of neighbors) {
-        const neighborKey = this.getVoxelKey(nx, ny, nz);
-        if (!visited.has(neighborKey) && this.isSolid(nx, ny, nz)) {
-          visited.add(neighborKey);
-          queue.push(neighborKey);
-        }
-      }
-    }
-
-    // Remove all voxels not connected to ground
-    for (const [chunkKey, chunk] of this.chunks) {
-      for (const [voxelKey, voxel] of chunk.voxels) {
-        if (!visited.has(voxelKey) && voxel.type !== VOXEL_AIR) {
-          const [x, y, z] = voxelKey.split(',').map(Number);
-          changes.push({
-            x,
-            y,
-            z,
-            type: VOXEL_AIR,
-            durability: 0,
-          });
-          chunk.voxels.delete(voxelKey);
-          chunk.dirty = true;
-        }
-      }
+    for (const key of toCollapse) {
+      const parts = key.split(',');
+      const x = parseInt(parts[0]);
+      const y = parseInt(parts[1]);
+      const z = parseInt(parts[2]);
+      
+      this.setVoxel(x, y, z, VOXEL_AIR, 0);
+      changes.push({ x, y, z, type: VOXEL_AIR, durability: 0 });
     }
 
     return changes;
+  }
+
+  private hasSupport(x: number, y: number, z: number, maxDistance: number): boolean {
+    const visited = new Set<string>();
+    const queue: Array<{x: number, y: number, z: number, dist: number}> = [];
+    
+    queue.push({x, y, z, dist: 0});
+    visited.add(this.getVoxelKey(x, y, z));
+
+    let queueHead = 0;
+    while (queueHead < queue.length) {
+      const current = queue[queueHead++];
+      
+      if (current.y <= GROUND_LEVEL) {
+        return true;
+      }
+      
+      if (current.dist >= maxDistance) {
+        continue;
+      }
+
+      const neighbors = [
+        [current.x + 1, current.y, current.z],
+        [current.x - 1, current.y, current.z],
+        [current.x, current.y + 1, current.z],
+        [current.x, current.y - 1, current.z],
+        [current.x, current.y, current.z + 1],
+        [current.x, current.y, current.z - 1],
+      ];
+
+      for (const [nx, ny, nz] of neighbors) {
+        const nkey = this.getVoxelKey(nx, ny, nz);
+        if (visited.has(nkey)) continue;
+        
+        const voxel = this.getVoxel(nx, ny, nz);
+        if (!voxel || voxel.type === VOXEL_AIR) continue;
+        
+        visited.add(nkey);
+        queue.push({x: nx, y: ny, z: nz, dist: current.dist + 1});
+      }
+    }
+
+    return false;
+  }
+
+  private findUnsupportedChain(x: number, y: number, z: number, toCollapse: string[], checked: Set<string>): void {
+    const queue: Array<{x: number, y: number, z: number}> = [];
+    queue.push({x, y, z});
+    checked.add(this.getVoxelKey(x, y, z));
+
+    let queueHead = 0;
+    while (queueHead < queue.length) {
+      const current = queue[queueHead++];
+      toCollapse.push(this.getVoxelKey(current.x, current.y, current.z));
+
+      const neighbors = [
+        [current.x + 1, current.y, current.z],
+        [current.x - 1, current.y, current.z],
+        [current.x, current.y + 1, current.z],
+        [current.x, current.y - 1, current.z],
+        [current.x, current.y, current.z + 1],
+        [current.x, current.y, current.z - 1],
+      ];
+
+      for (const [nx, ny, nz] of neighbors) {
+        const nkey = this.getVoxelKey(nx, ny, nz);
+        if (checked.has(nkey)) continue;
+        
+        const voxel = this.getVoxel(nx, ny, nz);
+        if (!voxel || voxel.type === VOXEL_AIR) continue;
+        
+        checked.add(nkey);
+        queue.push({x: nx, y: ny, z: nz});
+      }
+    }
   }
 
   getDirtyChunks(): { chunkX: number; chunkZ: number; voxels: VoxelChange[] }[] {

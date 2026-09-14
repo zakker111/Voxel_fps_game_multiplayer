@@ -76,84 +76,27 @@ export class ServerPlayer {
     this.rotation.pitch = input.pitch;
     this.isCrouching = input.crouch;
     this.isSprinting = input.sprint;
+    if (input.equipment && input.equipment !== this.equipment) {
+      this.changeEquipment(input.equipment);
+    }
+    if (input.isAiming !== undefined) this.isAiming = input.isAiming;
+    if (input.position) {
+      const half = 150;
+      if (
+        input.position.x >= -half && input.position.x <= half &&
+        input.position.z >= -half && input.position.z <= half &&
+        input.position.y >= -20 && input.position.y <= 60
+      ) {
+        this.position.x = input.position.x;
+        this.position.y = input.position.y;
+        this.position.z = input.position.z;
+      }
+    }
   }
 
   update(dt: number, world: ServerWorld): void {
     if (this.isDead) return;
-
-    // Calculate movement direction
-    const yaw = this.input.yaw;
-    const forward = {
-      x: -Math.sin(yaw),
-      z: -Math.cos(yaw),
-    };
-    const right = {
-      x: Math.cos(yaw),
-      z: -Math.sin(yaw),
-    };
-
-    // Apply movement input
-    let speed = PLAYER_SPEED;
-    if (this.isSprinting && !this.isCrouching) speed *= SPRINT_MULTIPLIER;
-    if (this.isCrouching) speed *= CROUCH_MULTIPLIER;
-
-    const moveX = forward.x * this.input.moveZ + right.x * this.input.moveX;
-    const moveZ = forward.z * this.input.moveZ + right.z * this.input.moveX;
-
-    this.velocity.x = moveX * speed;
-    this.velocity.z = moveZ * speed;
-
-    // Apply gravity
-    this.velocity.y -= GRAVITY * dt;
-
-    // Calculate new position
-    const newX = this.position.x + this.velocity.x * dt;
-    const newY = this.position.y + this.velocity.y * dt;
-    const newZ = this.position.z + this.velocity.z * dt;
-
-    // Check collisions
-    const currentHeight = this.isCrouching ? CROUCH_HEIGHT : PLAYER_HEIGHT;
-
-    // Horizontal collision (X)
-    if (!this.checkCollision(newX, this.position.y, this.position.z, currentHeight, world)) {
-      this.position.x = newX;
-    } else {
-      this.velocity.x = 0;
-    }
-
-    // Horizontal collision (Z)
-    if (!this.checkCollision(this.position.x, this.position.y, newZ, currentHeight, world)) {
-      this.position.z = newZ;
-    } else {
-      this.velocity.z = 0;
-    }
-
-    // Vertical collision (Y)
-    if (!this.checkCollision(this.position.x, newY, this.position.z, currentHeight, world)) {
-      this.position.y = newY;
-      this.isGrounded = false;
-    } else {
-      if (this.velocity.y < 0) {
-        // Landing
-        this.isGrounded = true;
-        // Snap to ground
-        const groundY = world.getGroundHeight(this.position.x, this.position.z);
-        this.position.y = groundY + 0.1;
-      }
-      this.velocity.y = 0;
-    }
-
-    // Jump
-    if (this.input.jump && this.isGrounded) {
-      this.velocity.y = JUMP_FORCE;
-      this.isGrounded = false;
-    }
-
-    // Prevent falling through world
-    if (this.position.y < -10) {
-      this.position.y = world.getGroundHeight(this.position.x, this.position.z) + 1;
-      this.velocity.y = 0;
-    }
+    this.updateReload();
   }
 
   private checkCollision(x: number, y: number, z: number, height: number, world: ServerWorld): boolean {

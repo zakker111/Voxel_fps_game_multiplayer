@@ -89,6 +89,10 @@ export class Player {
     }
   }
 
+  hasKey(code: string): boolean {
+    return this.keys.has(code.toLowerCase());
+  }
+
   handleMouseMove(dx: number, dy: number): void {
     if (this.isDead) return;
     this.yaw -= dx * this.sensitivity;
@@ -121,21 +125,25 @@ export class Player {
     this.respawnTimer = 4;
   }
 
-  respawn(team: 'red' | 'blue' = 'blue'): void {
+  respawn(team: 'red' | 'blue' = 'blue', customPos?: THREE.Vector3): void {
     this.isDead = false;
     this.hp = this.maxHp;
     
-    // Spawn in team spawn zone
-    let spawnZ: number;
-    if (team === 'blue') {
-      spawnZ = -100 + Math.random() * 10; // BLUE_SPAWN_Z_MIN to BLUE_SPAWN_Z_MAX
+    if (customPos) {
+      this.position.copy(customPos);
     } else {
-      spawnZ = 90 + Math.random() * 10; // RED_SPAWN_Z_MIN to RED_SPAWN_Z_MAX
+      // Spawn in team spawn zone
+      let spawnZ: number;
+      if (team === 'blue') {
+        spawnZ = -100 + Math.random() * 10; // BLUE_SPAWN_Z_MIN to BLUE_SPAWN_Z_MAX
+      } else {
+        spawnZ = 90 + Math.random() * 10; // RED_SPAWN_Z_MIN to RED_SPAWN_Z_MAX
+      }
+      
+      const spawnX = (Math.random() - 0.5) * 40; // SPAWN_X_RANGE * 2
+      const groundY = this.world.getGroundHeight(spawnX, spawnZ);
+      this.position.set(spawnX, groundY, spawnZ);
     }
-    
-    const spawnX = (Math.random() - 0.5) * 40; // SPAWN_X_RANGE * 2
-    const groundY = this.world.getGroundHeight(spawnX, spawnZ);
-    this.position.set(spawnX, groundY, spawnZ);
     this.velocity.set(0, 0, 0);
     
     // Face toward enemy team
@@ -279,6 +287,18 @@ export class Player {
     if (this.checkCollisionAt(this.position)) {
       const pushedPos = this.pushOutOfSolids(this.position);
       this.position.copy(pushedPos);
+    }
+
+    // Arrow keys for camera rotation (accessibility & preview without pointer lock)
+    if (this.keys.has('arrowleft')) this.yaw += 2.2 * dt;
+    if (this.keys.has('arrowright')) this.yaw -= 2.2 * dt;
+    if (this.keys.has('arrowup')) {
+      this.pitch += 1.6 * dt;
+      this.pitch = Math.min(Math.PI / 2 - 0.01, this.pitch);
+    }
+    if (this.keys.has('arrowdown')) {
+      this.pitch -= 1.6 * dt;
+      this.pitch = Math.max(-Math.PI / 2 + 0.01, this.pitch);
     }
 
     const moveDir = new THREE.Vector3(0, 0, 0);

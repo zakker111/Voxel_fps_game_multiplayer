@@ -487,11 +487,12 @@ export class VoxelWorld {
   }
 
   // Call once per frame to handle deferred rebuilds
-  update(): void {
-    // Only rebuild dirty chunks (max 2 per frame to spread load)
+  update(forceAll: boolean = false): void {
+    // Rebuild dirty chunks (up to 8 per frame, or all if forceAll is true)
     let rebuilt = 0;
+    const maxRebuild = forceAll ? 9999 : 8;
     for (const [key, chunk] of this.chunks) {
-      if (chunk.dirty && rebuilt < 2) {
+      if (chunk.dirty && (forceAll || rebuilt < maxRebuild)) {
         this.rebuildChunk(key);
         chunk.dirty = false;
         rebuilt++;

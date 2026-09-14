@@ -32,6 +32,11 @@ export interface GameState {
   isReloading: boolean;
   playerCarryingFlag: boolean;
   flagCarrierName: string;
+  isSpectating: boolean;
+  isOnline?: boolean;
+  connectedPlayersCount?: number;
+  isNetworkConnected?: boolean;
+  localPlayerId?: string | null;
 }
 
 interface Bot {
@@ -138,6 +143,8 @@ export class Game {
   redKills: number = 0;
   blueCaptures: number = 0;
   redCaptures: number = 0;
+  isSpectating: boolean = false;
+  spectatorAngle: number = 0;
   buildMode: boolean = false;
   clock: THREE.Clock;
   onStateChange: ((state: GameState) => void) | null = null;
@@ -239,13 +246,14 @@ export class Game {
     },
   };
 
-  constructor(canvas: HTMLCanvasElement, mode: GameMode = 'multiplayer') {
+  constructor(canvas: HTMLCanvasElement, mode: GameMode = 'multiplayer', team: Team = 'blue') {
     try {
       console.log('Game constructor started');
     this.canvas = canvas;
     this.clock = new THREE.Clock();
     this.sounds = new SoundManager();
     this.gameMode = mode;
+    this.playerTeam = team;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87CEEB);
@@ -279,10 +287,10 @@ export class Game {
 
     console.log('Creating player...');
     this.player = new Player(this.world);
-    this.player.team = 'blue';
-    const blueSpawn = this.getSafeSpawnPos('blue');
-    this.player.position.copy(blueSpawn);
-    this.player.yaw = Math.PI;
+    this.player.team = team;
+    const spawnPos = this.getSafeSpawnPos(team);
+    this.player.position.copy(spawnPos);
+    this.player.yaw = team === 'blue' ? Math.PI : 0;
     this.player.updateCamera();
     console.log('Player created');
 
@@ -832,13 +840,287 @@ export class Game {
 
   private initializeNetwork(): void {
     this.networkClient = new NetworkClient();
+
     this.networkClient.onConnect(() => {
-      this.showMessage('Connected to server!');
-      this.networkClient!.sendJoin(this.playerTeam);
+      this.showMessage(`Connected to game server as ${this.playerTeam.toUpperCase()}!`);
+      this.networkClient!.sendJoin(this.playerTeam, {
+        x: this.player.position.x,
+        y: this.player.position.y,
+        z: this.player.position.z,
+      });
     });
-    this.networkClient.connect().catch(() => {
+
+    this.networkClient.onDisconnect(() => {
+      this.showMessage('Disconnected from server. Reconnecting...');
+    });
+
+    // Handle full init message
+    this.networkClient.onMessage('init', (msg: any) => {
+      this.localPlayerId = msg.playerId;
+      if (msg.captures) {
+        this.blueCaptures = msg.captures.blue || 0;
+        this.redCaptures = msg.captures.red || 0;
+      }
+      if (msg.scores) {
+        this.blueKills = msg.scores.blue || 0;
+        this.redKills = msg.scores.red || 0;
+      }
+      // Add existing players
+      if (msg.players && Array.isArray(msg.players)) {
+        for (const p of msg.players) {
+          if (p.id !== this.localPlayerId) {
+            this.addRemotePlayer(p.id, p.state);
+          }
+        }
+      }
+      if (typeof msg.inventory === 'number') {
+        this.inventory = msg.inventory;
+      }
+      if (msg.voxelChanges && Array.isArray(msg.voxelChanges) && msg.voxelChanges.length > 0) {
+        for (const change of msg.voxelChanges) {
+          this.world.setVoxel(change.x, change.y, change.z, change.type, change.durability);
+        }
+        this.world.update(true);
+      }
+      this.showMessage(`🟢 Online Match Ready! (${this.playerTeam.toUpperCase()} Team)`);
+    });
+
+    // Handle player joined
+    this.networkClient.onMessage('playerJoined', (msg: any) => {
+      if (msg.playerId === this.localPlayerId) return;
+      this.addRemotePlayer(msg.playerId, msg.state);
+    });
+
+    // Handle player left
+    this.networkClient.onMessage('playerLeft', (msg: any) => {
+      this.removeRemotePlayer(msg.playerId);
+    });
+
+    // Handle player updated
+    this.networkClient.onMessage('playerUpdated', (msg: any) => {
+      if (msg.playerId === this.localPlayerId) {
+        if (msg.state?.hp !== undefined && msg.state.hp < this.player.hp) {
+          this.player.hp = msg.state.hp;
+          this.sounds.hurt();
+        }
+        return;
+      }
+      let remote = this.remotePlayers.get(msg.playerId);
+      if (!remote) {
+        this.addRemotePlayer(msg.playerId, msg.state);
+        remote = this.remotePlayers.get(msg.playerId);
+      }
+      if (remote) {
+        // If team changed, rebuild mesh and nametag with the correct team colors!
+        if (remote.state.team !== msg.state.team) {
+          this.scene.remove(remote.mesh);
+          const mesh = this.createBotMesh(msg.state.team as Team);
+          const nameTag = this.createNameTag(msg.state.team as Team, `Player ${msg.playerId.slice(-4)}`);
+          nameTag.position.y = 2.6;
+          mesh.add(nameTag);
+          this.scene.add(mesh);
+          remote.mesh = mesh;
+        }
+        remote.state = msg.state;
+        remote.mesh.visible = !msg.state.isDead;
+        remote.targetPosition.set(msg.state.position.x, msg.state.position.y, msg.state.position.z);
+        remote.targetRotation.set(0, msg.state.rotation.yaw, 0, 'YXZ');
+      }
+    });
+
+    // Handle remote player shot (muzzle flash, tracer, 3D sound)
+    this.networkClient.onMessage('playerShot', (msg: any) => {
+      if (msg.playerId === this.localPlayerId) return;
+      this.renderRemotePlayerShot(msg.playerId, msg.origin, msg.direction, msg.weapon);
+    });
+
+    // Handle hit confirmed on enemy
+    this.networkClient.onMessage('hitConfirmed', (msg: any) => {
+      this.hitMarkerTimer = 0.25;
+      this.sounds.hitMarker();
+      if (msg.isHeadshot) {
+        this.sounds.headshot();
+      }
+    });
+
+    // Handle local player damaged
+    this.networkClient.onMessage('playerDamaged', (msg: any) => {
+      if (msg.playerId === this.localPlayerId) {
+        this.player.takeDamage(msg.damage);
+        this.sounds.hurt();
+      } else {
+        const remote = this.remotePlayers.get(msg.playerId);
+        if (remote) {
+          remote.state.hp = Math.max(0, remote.state.hp - msg.damage);
+        }
+      }
+    });
+
+    // Handle player died
+    this.networkClient.onMessage('playerDied', (msg: any) => {
+      if (msg.playerId === this.localPlayerId) {
+        this.player.die();
+        this.player.respawnTimer = 4;
+        this.sounds.deathSound();
+        this.showMessage('☠️ You were eliminated! Respawning in 4s...');
+      } else {
+        const remote = this.remotePlayers.get(msg.playerId);
+        if (remote) {
+          remote.mesh.visible = false;
+          remote.state.isDead = true;
+          remote.state.hp = 0;
+        }
+        if (msg.killerId === this.localPlayerId) {
+          if (this.playerTeam === 'blue') this.blueKills++; else this.redKills++;
+          this.sounds.killSound();
+          this.showMessage(`🎯 You eliminated Player ${msg.playerId.slice(-4)}!`);
+        }
+      }
+    });
+
+    // Handle player respawned
+    this.networkClient.onMessage('playerRespawned', (msg: any) => {
+      if (msg.playerId === this.localPlayerId) {
+        this.player.respawn(this.playerTeam, new THREE.Vector3(msg.position.x, msg.position.y, msg.position.z));
+        this.sounds.respawn();
+        this.showMessage('Respawned at base!');
+      } else {
+        const remote = this.remotePlayers.get(msg.playerId);
+        if (remote) {
+          remote.state.isDead = false;
+          remote.state.hp = 100;
+          remote.mesh.visible = true;
+          remote.mesh.position.set(msg.position.x, msg.position.y, msg.position.z);
+          remote.targetPosition.set(msg.position.x, msg.position.y, msg.position.z);
+        }
+      }
+    });
+
+    // Handle voxel changes from server
+    this.networkClient.onMessage('voxelChanged', (msg: any) => {
+      const { x, y, z, type, durability } = msg.change;
+      const prevVoxel = this.world.getVoxel(x, y, z);
+      this.world.setVoxel(x, y, z, type, durability);
+      
+      // If solid voxel with partial durability, update color immediately
+      if (type !== 0 && durability < 3) {
+        this.world.updateVoxelColor(x, y, z, type, durability);
+      }
+
+      // Audio feedback if within hearing range of the player
+      const dist = this.player.camera.position.distanceTo(new THREE.Vector3(x, y, z));
+      if (dist < 30) {
+        if (type === 0 && prevVoxel && prevVoxel.type !== 0) {
+          this.sounds.spadeHit();
+        } else if (type === 4 && (!prevVoxel || prevVoxel.type === 0)) {
+          this.sounds.buildPlace();
+        }
+      }
+    });
+
+    // Handle inventory updates from server
+    this.networkClient.onMessage('inventoryUpdated', (msg: any) => {
+      if (typeof msg.inventory === 'number') {
+        this.inventory = msg.inventory;
+      }
+    });
+
+    // Handle flag pickup
+    this.networkClient.onMessage('flagPickedUp', (msg: any) => {
+      const isLocal = msg.playerId === this.localPlayerId;
+      const flag = msg.flagTeam === 'blue' ? this.blueFlag : this.redFlag;
+      if (flag) {
+        flag.isDropped = false;
+        if (isLocal) {
+          this.player.carryingFlag = true;
+          this.sounds.flagPickup();
+          this.showMessage(`🚩 YOU TOOK THE ${msg.flagTeam.toUpperCase()} FLAG! RUN TO BASE!`);
+        } else {
+          this.sounds.flagAlarm();
+          this.showMessage(`⚠️ ${msg.flagTeam.toUpperCase()} FLAG TAKEN by Player ${msg.playerId.slice(-4)}!`);
+        }
+      }
+    });
+
+    // Handle flag dropped
+    this.networkClient.onMessage('flagDropped', (msg: any) => {
+      const flag = msg.flagTeam === 'blue' ? this.blueFlag : this.redFlag;
+      if (flag) {
+        flag.currentPos.set(msg.position.x, msg.position.y + 0.5, msg.position.z);
+        flag.mesh.position.copy(flag.currentPos);
+        flag.carrier = null;
+        flag.isDropped = true;
+        this.showMessage(`🚩 ${msg.flagTeam.toUpperCase()} FLAG DROPPED on the battlefield!`);
+      }
+    });
+
+    // Handle flag returned
+    this.networkClient.onMessage('flagReturned', (msg: any) => {
+      const flag = msg.flagTeam === 'blue' ? this.blueFlag : this.redFlag;
+      if (flag) {
+        this.resetFlagToBase(flag);
+        this.showMessage(`🛡️ ${msg.flagTeam.toUpperCase()} FLAG RETURNED TO BASE!`);
+      }
+    });
+
+    // Handle flag captured
+    this.networkClient.onMessage('flagCaptured', (msg: any) => {
+      this.blueCaptures = msg.captures.blue;
+      this.redCaptures = msg.captures.red;
+      this.sounds.flagCapture();
+      if (msg.playerId === this.localPlayerId) {
+        this.showMessage(`🏆 YOU CAPTURED THE ENEMY FLAG! (+1 SCORE)`);
+      } else {
+        this.showMessage(`🏆 ${msg.team.toUpperCase()} TEAM SCORED A FLAG CAPTURE!`);
+      }
+    });
+
+    this.networkClient.connect().catch((err) => {
+      console.error('Failed to connect to server:', err);
       this.showMessage('Failed to connect to server');
     });
+  }
+
+  private addRemotePlayer(id: string, state: PlayerState): void {
+    if (this.remotePlayers.has(id)) return;
+    const mesh = this.createBotMesh(state.team as Team);
+    mesh.position.set(state.position.x, state.position.y, state.position.z);
+
+    const nameTag = this.createNameTag(state.team as Team, `Player ${id.slice(-4)}`);
+    nameTag.position.y = 2.6;
+    mesh.add(nameTag);
+
+    this.scene.add(mesh);
+    this.remotePlayers.set(id, {
+      mesh,
+      state,
+      targetPosition: new THREE.Vector3(state.position.x, state.position.y, state.position.z),
+      targetRotation: new THREE.Euler(0, state.rotation.yaw, 0, 'YXZ'),
+      lastShootingTime: 0,
+    });
+    this.showMessage(`🎮 Player ${id.slice(-4)} (${state.team.toUpperCase()}) joined!`);
+  }
+
+  private removeRemotePlayer(id: string): void {
+    const remote = this.remotePlayers.get(id);
+    if (remote) {
+      this.scene.remove(remote.mesh);
+      this.remotePlayers.delete(id);
+      this.showMessage(`Player ${id.slice(-4)} left the game.`);
+    }
+  }
+
+  private renderRemotePlayerShot(playerId: string, origin: Position, direction: Position, weaponType: string): void {
+    const o = new THREE.Vector3(origin.x, origin.y, origin.z);
+    const d = new THREE.Vector3(direction.x, direction.y, direction.z);
+    this.createMuzzleFlash(o, d);
+    this.createBulletTracer(o, d);
+    this.createBulletShell(o, d);
+    if (weaponType === 'smg') {
+      this.sounds.smgShot();
+    } else {
+      this.sounds.rifleShot();
+    }
   }
 
   private onResize(): void {
@@ -880,6 +1162,7 @@ export class Game {
     if (e.code === 'Digit3') { this.equipment = 'spade'; this.switchWeaponModel('spade'); }
     if (e.code === 'Digit4') { this.equipment = 'pickaxe'; this.switchWeaponModel('pickaxe'); }
     if (e.code === 'KeyR') this.startReload();
+    if (e.code === 'KeyP') this.toggleSpectator();
     this.player.handleKeyDown(e.code);
   }
 
@@ -890,7 +1173,18 @@ export class Game {
   private onMouseMove(e: MouseEvent): void {
     if (document.pointerLockElement) {
       this.player.handleMouseMove(e.movementX, e.movementY);
+    } else if (this.isMouseDown) {
+      // Drag-to-look when pointer lock is not active (essential for AI preview / iframe)
+      this.player.handleMouseMove(e.movementX * 1.5, e.movementY * 1.5);
     }
+  }
+
+  toggleSpectator(): void {
+    this.isSpectating = !this.isSpectating;
+    if (!this.isSpectating) {
+      this.player.updateCamera();
+    }
+    this.showMessage(this.isSpectating ? '🎥 Spectator Camera: ON' : '🎯 Player First-Person: ON');
   }
 
   requestPointerLock(canvas: HTMLCanvasElement): void {
@@ -947,6 +1241,38 @@ export class Game {
       }
     }
 
+    // Check hit on enemy remote players
+    let hitRemoteId: string | null = null;
+    let hitIsHeadshot = false;
+
+    for (const [id, remote] of this.remotePlayers) {
+      if (remote.state.isDead || remote.state.team === this.playerTeam) continue;
+      const toRemote = remote.mesh.position.clone().sub(this.player.position);
+      const dot = toRemote.dot(dir);
+      if (dot > 0 && dot < 100 && dot < voxelDist) {
+        const closestPoint = this.player.position.clone().add(dir.clone().multiplyScalar(dot));
+        const horizontalDist = Math.hypot(closestPoint.x - remote.mesh.position.x, closestPoint.z - remote.mesh.position.z);
+        const verticalDist = closestPoint.y - remote.mesh.position.y;
+        if (horizontalDist < 0.75 && verticalDist >= -0.2 && verticalDist <= 2.3) {
+          hitRemoteId = id;
+          hitIsHeadshot = verticalDist >= 1.45;
+          this.hitMarkerTimer = 0.25;
+          this.sounds.hitMarker();
+          if (hitIsHeadshot) this.sounds.headshot();
+          break;
+        }
+      }
+    }
+
+    // Send shoot event to network server with hit candidate
+    if (this.networkClient && this.networkClient.isConnected()) {
+      this.networkClient.sendShoot(
+        { x: muzzlePos.x, y: muzzlePos.y, z: muzzlePos.z },
+        { x: dir.x, y: dir.y, z: dir.z },
+        hitRemoteId ? { targetId: hitRemoteId, isHeadshot: hitIsHeadshot } : undefined
+      );
+    }
+
     // Check hit on enemy bots with realistic hitbox (head and body)
     for (const bot of this.bots) {
       if (bot.isDead || bot.team === this.playerTeam) continue;
@@ -989,11 +1315,13 @@ export class Game {
     const hit = this.world.raycast(origin, dir, 5);
     
     if (hit) {
-      const destroyed = this.world.damageVoxel(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z, 3);
-      if (destroyed) {
+      const result = this.world.damageVoxel(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z, 3);
+      if (result.destroyed) {
         this.inventory++;
-        this.world.updateVoxelColor(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z, 0, 0);
         this.sounds.pickaxeHit();
+      }
+      if (this.networkClient && this.networkClient.isConnected()) {
+        this.networkClient.sendUseTool('pickaxe', { x: hit.voxelPos.x, y: hit.voxelPos.y, z: hit.voxelPos.z });
       }
     }
   }
@@ -1008,8 +1336,10 @@ export class Game {
     
     if (hit) {
       this.world.damageVoxel(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z, 3);
-      this.world.updateVoxelColor(hit.voxelPos.x, hit.voxelPos.y, hit.voxelPos.z, 0, 0);
       this.sounds.spadeHit();
+      if (this.networkClient && this.networkClient.isConnected()) {
+        this.networkClient.sendUseTool('spade', { x: hit.voxelPos.x, y: hit.voxelPos.y, z: hit.voxelPos.z });
+      }
     }
   }
 
@@ -1029,6 +1359,9 @@ export class Game {
         this.world.setVoxel(px, py, pz, VOXEL_BUILT, 3);
         this.inventory--;
         this.sounds.buildPlace();
+        if (this.networkClient && this.networkClient.isConnected()) {
+          this.networkClient.sendBuild({ x: px, y: py, z: pz });
+        }
       }
     }
   }
@@ -1042,6 +1375,9 @@ export class Game {
     this.reloadAnimationTime = 0;
     this.reloadAnimationDuration = weapon.reloadTime;
     this.sounds.reload();
+    if (this.networkClient && this.networkClient.isConnected()) {
+      this.networkClient.sendReload();
+    }
   }
 
   private createMuzzleFlash(position: THREE.Vector3, direction: THREE.Vector3): void {
@@ -1201,6 +1537,83 @@ export class Game {
 
     this.updateFlags(dt);
     this.updateBots(dt);
+
+    // Send network player input to server
+    if (this.networkClient && this.networkClient.isConnected() && !this.player.isDead) {
+      const now = performance.now();
+      if (now - this.lastInputSendTime > this.inputSendRate) {
+        this.lastInputSendTime = now;
+        this.networkClient.sendPlayerInput({
+          moveX: (this.player.hasKey('KeyD') ? 1 : 0) - (this.player.hasKey('KeyA') ? 1 : 0),
+          moveZ: (this.player.hasKey('KeyW') ? 1 : 0) - (this.player.hasKey('KeyS') ? 1 : 0),
+          jump: this.player.hasKey('Space'),
+          crouch: this.player.isCrouching,
+          sprint: this.player.isSprinting,
+          yaw: this.player.yaw,
+          pitch: this.player.pitch,
+          position: { x: this.player.position.x, y: this.player.position.y, z: this.player.position.z },
+          equipment: this.equipment,
+          isAiming: this.isAiming,
+        });
+      }
+    }
+
+    // Smoothly interpolate remote players
+    for (const [, remote] of this.remotePlayers) {
+      remote.mesh.position.lerp(remote.targetPosition, Math.min(dt * 15, 1));
+      remote.mesh.rotation.y = remote.targetRotation.y;
+
+      const dist = remote.mesh.position.distanceTo(remote.targetPosition);
+      const isMoving = dist > 0.05;
+      // Bot mesh children: 0: body, 1: head, 2: helmet, 3: leftArm, 4: rightArm, 5: leftLeg, 6: rightLeg
+      const leftArm = remote.mesh.children[3] as THREE.Mesh;
+      const rightArm = remote.mesh.children[4] as THREE.Mesh;
+      const leftLeg = remote.mesh.children[5] as THREE.Mesh;
+      const rightLeg = remote.mesh.children[6] as THREE.Mesh;
+
+      if (isMoving) {
+        const swing = Math.sin(performance.now() * 0.01) * 0.45;
+        if (leftLeg) leftLeg.rotation.x = swing;
+        if (rightLeg) rightLeg.rotation.x = -swing;
+        if (leftArm) leftArm.rotation.x = -swing;
+        if (rightArm) rightArm.rotation.x = swing;
+      } else {
+        if (leftLeg) leftLeg.rotation.x = 0;
+        if (rightLeg) rightLeg.rotation.x = 0;
+        if (leftArm) leftArm.rotation.x = 0;
+        if (rightArm) rightArm.rotation.x = 0;
+      }
+    }
+
+    // Hit marker timer countdown (only flashes red on hit, then disappears)
+    if (this.hitMarkerTimer > 0) {
+      this.hitMarkerTimer -= dt;
+      if (this.hitMarkerTimer <= 0) {
+        this.hitMarkerTimer = 0;
+      }
+    }
+
+    // Dynamic Spectator camera view
+    if (this.isSpectating) {
+      this.spectatorAngle += dt * 0.22;
+      let focusTarget = new THREE.Vector3(0, this.world.getOriginalGroundLevel() + 2, 0);
+      if (this.redFlag?.carrier) {
+        const carrierPos = this.redFlag.carrier.isPlayer ? this.player.position : this.redFlag.carrier.bot?.position;
+        if (carrierPos) focusTarget = carrierPos.clone();
+      } else if (this.blueFlag?.carrier) {
+        const carrierPos = this.blueFlag.carrier.isPlayer ? this.player.position : this.blueFlag.carrier.bot?.position;
+        if (carrierPos) focusTarget = carrierPos.clone();
+      }
+
+      const camDist = 30;
+      const camHeight = 18;
+      const camX = focusTarget.x + Math.sin(this.spectatorAngle) * camDist;
+      const camZ = focusTarget.z + Math.cos(this.spectatorAngle) * camDist;
+      const camY = Math.max(this.world.getGroundHeight(camX, camZ) + 4, focusTarget.y + camHeight);
+
+      this.player.camera.position.lerp(new THREE.Vector3(camX, camY, camZ), Math.min(dt * 4, 1));
+      this.player.camera.lookAt(focusTarget.x, focusTarget.y + 1.5, focusTarget.z);
+    }
 
     if (this.messageTimer > 0) {
       this.messageTimer -= dt;
@@ -1477,8 +1890,8 @@ export class Game {
       if (target.isPlayer) {
         const dmg = bot.weapon === 'rifle' ? 25 + Math.random() * 20 : 12 + Math.random() * 12;
         this.player.takeDamage(dmg);
-        this.hitMarkerTimer = 0.2;
-        this.sounds.hitMarker();
+        this.player.addCameraShake(0.15);
+        this.sounds.hurt();
 
         if (this.player.isDead) {
           if (bot.team === 'red') this.redKills++; else this.blueKills++;
@@ -1539,6 +1952,11 @@ export class Game {
         isReloading: weapon ? weapon.isReloading : false,
         playerCarryingFlag: this.player.carryingFlag,
         flagCarrierName: carrierName,
+        isSpectating: this.isSpectating,
+        isOnline: this.gameMode === 'online',
+        connectedPlayersCount: this.remotePlayers.size + 1,
+        isNetworkConnected: this.networkClient ? this.networkClient.isConnected() : false,
+        localPlayerId: this.localPlayerId,
       });
     }
   }

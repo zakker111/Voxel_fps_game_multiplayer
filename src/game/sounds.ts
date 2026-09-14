@@ -320,4 +320,32 @@ export class SoundManager {
     
     source.start();
   }
+
+  hurt() {
+    this.playTone(180, 0.12, 0.35, 'sawtooth');
+    this.playNoise(0.08, 0.25);
+  }
+
+  headshot() {
+    this.playTone(1200, 0.08, 0.35, 'sine');
+    setTimeout(() => this.playTone(1600, 0.1, 0.4, 'sine'), 60);
+  }
+
+  deathSound() {
+    this.death();
+  }
+
+  flagPickup() {
+    this.playTone(600, 0.1, 0.3, 'sine');
+    setTimeout(() => this.playTone(900, 0.15, 0.35, 'sine'), 100);
+  }
+
+  flagAlarm() {
+    this.playTone(400, 0.15, 0.3, 'sawtooth');
+    setTimeout(() => this.playTone(300, 0.15, 0.3, 'sawtooth'), 150);
+  }
+
+  flagCapture() {
+    this.capture();
+  }
 }
