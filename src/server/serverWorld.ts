@@ -27,12 +27,17 @@ export class ServerWorld {
   private chunks: Map<string, Chunk> = new Map();
   private modifiedVoxels: Map<string, VoxelChange> = new Map();
   private isGeneratingTerrain: boolean = false;
+  public serverTime: number = 0;
 
   constructor() {
     this.isGeneratingTerrain = true;
     this.generateTerrain();
     this.isGeneratingTerrain = false;
     console.log('Server world initialized');
+  }
+
+  updateTime(dt: number): void {
+    this.serverTime += dt;
   }
 
   private getChunkKey(chunkX: number, chunkZ: number): string {

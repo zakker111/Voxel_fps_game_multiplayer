@@ -5,6 +5,24 @@ import { SoundManager } from './sounds';
 import { NetworkClient } from './networkClient';
 import { PlayerState, PlayerInput, Position } from '../shared/types';
 
+// Game Constants
+const VERSION = "1.4.0"; // Spectator fix, Bot AI overhaul, Footsteps, Spawn dist
+const FPS = 60;
+const DT = 1 / FPS;
+const GRAVITY = 30;
+const JUMP_FORCE = 12;
+const MOVE_SPEED = 6;
+const SPRINT_MULTI = 1.6;
+const CROUCH_MULTI = 0.4;
+const REACH = 5;
+const MOUSE_SENS = 0.002;
+const FOV = 75;
+const SKY_COLOR = 0x87CEEB;
+const FOG_COLOR = 0x87CEEB;
+const RENDER_DISTANCE = 60;
+const CHUNK_SIZE = 16;
+const TEXTURE_SCALE = 16;
+
 export type EquipmentType = 'rifle' | 'smg' | 'spade' | 'pickaxe';
 type Team = 'red' | 'blue';
 type GameMode = 'multiplayer' | 'singleplayer' | 'online';
@@ -1239,7 +1257,10 @@ export class Game {
     if (e.code === 'Digit3') { this.equipment = 'spade'; this.switchWeaponModel('spade'); }
     if (e.code === 'Digit4') { this.equipment = 'pickaxe'; this.switchWeaponModel('pickaxe'); }
     if (e.code === 'KeyR') this.startReload();
-    if (e.code === 'KeyP') this.toggleSpectator();
+    if (e.code === 'KeyP') {
+      this.toggleSpectator();
+      return; // Exit early to prevent other key handling
+    }
     
     // Spectator mode controls - WASD for movement, Space/Shift for up/down, mouse for look
     if (this.isSpectating) {
@@ -2165,6 +2186,8 @@ export class Game {
             }
           }
           
+          // Reset timer for next dig action
+          bot.digTimer = 0.5; // Short delay between digs
           if (bot.digTimer <= -2) {
             bot.isDigging = false;
             bot.digTarget = null;
@@ -2189,6 +2212,8 @@ export class Game {
             }
           }
           
+          // Reset timer for next build action
+          bot.buildTimer = 0.5; // Short delay between builds
           if (bot.buildTimer <= -1) {
             bot.isBuilding = false;
             bot.buildTarget = null;
