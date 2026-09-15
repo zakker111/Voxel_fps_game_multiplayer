@@ -93,7 +93,8 @@ function App() {
       {!started && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-50">
           <div className="text-center max-w-3xl px-4">
-            <h1 className="text-5xl font-bold text-white mb-3">🎮 Voxel FPS</h1>
+            <h1 className="text-5xl font-bold text-white mb-1">🎮 Voxel FPS</h1>
+            <div className="text-xs text-gray-500 font-mono mb-3">Version 1.4.0</div>
             <p className="text-lg text-gray-300 mb-1">Red vs Blue — Capture the Flag</p>
             <p className="text-sm text-gray-400 mb-6">You are <span className="text-blue-400 font-bold">BLUE</span> team. Push to the <span className="text-red-400 font-bold">RED</span> flag!</p>
             <div className="flex flex-wrap gap-3 justify-center mb-6">

@@ -101,6 +101,13 @@ export class ServerPlayer {
 
   update(dt: number, world: ServerWorld): void {
     if (this.isDead) return;
+    
+    // Skip physics and movement for spectators
+    if (this.isSpectating) {
+      this.updateReload();
+      return;
+    }
+    
     this.updateReload();
     
     // Check for footstep generation

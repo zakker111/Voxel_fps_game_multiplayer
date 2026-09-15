@@ -2186,14 +2186,13 @@ export class Game {
             }
           }
           
-          // Reset timer for next dig action
-          bot.digTimer = 0.5; // Short delay between digs
-          if (bot.digTimer <= -2) {
-            bot.isDigging = false;
-            bot.digTarget = null;
-          }
+          // Stop digging after completing one block or if timer goes negative
+          bot.isDigging = false;
+          bot.digTarget = null;
+          bot.digTimer = 0;
+        } else {
+          continue; // Skip movement while actively digging
         }
-        continue; // Skip movement while digging
       }
 
       // Handle building behavior
@@ -2212,14 +2211,13 @@ export class Game {
             }
           }
           
-          // Reset timer for next build action
-          bot.buildTimer = 0.5; // Short delay between builds
-          if (bot.buildTimer <= -1) {
-            bot.isBuilding = false;
-            bot.buildTarget = null;
-          }
+          // Stop building after completing one block
+          bot.isBuilding = false;
+          bot.buildTarget = null;
+          bot.buildTimer = 0;
+        } else {
+          continue; // Skip movement while actively building
         }
-        continue; // Skip movement while building
       }
 
       // Movement Physics & Obstacle Handling
