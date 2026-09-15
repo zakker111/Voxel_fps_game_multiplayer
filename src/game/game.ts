@@ -1838,7 +1838,7 @@ export class Game {
       const minGroundY = this.world.getGroundHeight(camX, camZ) + 2;
       camY = Math.max(minGroundY, camY);
 
-      // Apply WASD movement relative to camera direction
+      // Apply WASD movement relative to camera direction - move the focus point AND camera together
       const moveSpeed = 30 * dt;
       const forwardDir = new THREE.Vector3(Math.sin(this.spectatorAngle), 0, Math.cos(this.spectatorAngle));
       const rightDir = new THREE.Vector3(Math.cos(this.spectatorAngle), 0, -Math.sin(this.spectatorAngle));
@@ -1856,12 +1856,15 @@ export class Game {
         focusTarget.add(rightDir.clone().multiplyScalar(moveSpeed));
       }
 
-      // Update camera position to orbit around the focus target
+      // Update camera position to orbit around the NEW focus target
       const finalCamX = focusTarget.x + Math.sin(this.spectatorAngle) * horizontalDist;
       const finalCamZ = focusTarget.z + Math.cos(this.spectatorAngle) * horizontalDist;
       
       this.player.camera.position.set(finalCamX, camY, finalCamZ);
       this.player.camera.lookAt(focusTarget.x, focusTarget.y + 1.5, focusTarget.z);
+    } else {
+      // First-person player camera
+      this.player.updateCamera();
     }
 
     if (this.messageTimer > 0) {
@@ -2271,9 +2274,11 @@ export class Game {
           bot.lastPos.copy(bot.position);
         }
 
-        // Yaw rotation: face movement direction or face enemy when in close combat
-        let facingDir = moveDir;
-        if (enemyTarget && distToEnemy < 35) {
+        // Yaw rotation: ALWAYS face movement direction when moving, face enemy only when shooting at close range
+        let facingDir = moveDir.clone();
+        
+        // Only face enemy when in close combat AND actively shooting
+        if (enemyTarget && distToEnemy < 25 && bot.shootCooldown <= 0 && bot.canSeeEnemy) {
           const toEnemy = enemyTarget.pos.clone().sub(bot.position);
           toEnemy.y = 0;
           if (toEnemy.length() > 0.1) facingDir = toEnemy.normalize();
