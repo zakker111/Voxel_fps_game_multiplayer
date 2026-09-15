@@ -140,13 +140,15 @@ export class ServerWorld {
     const ix = Math.floor(x);
     const iz = Math.floor(z);
     
-    for (let y = GROUND_LEVEL + MAX_BUILD_UP; y >= 0; y--) {
+    // Search from high above down to find the topmost solid block
+    for (let y = GROUND_LEVEL + MAX_BUILD_UP + 10; y >= 0; y--) {
       if (this.isSolid(ix, y, iz)) {
-        return y + 1;
+        return y + 1; // Return position ON TOP of the solid block
       }
     }
     
-    return 0;
+    // Fallback to base ground level if nothing found
+    return GROUND_LEVEL;
   }
 
   canDig(x: number, y: number, z: number): boolean {
