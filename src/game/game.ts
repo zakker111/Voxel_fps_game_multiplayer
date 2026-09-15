@@ -154,11 +154,11 @@ const TEAM_COLORS: Record<Team, { body: number; accent: number; legs: number; la
   blue: { body: 0x2244cc, accent: 0x4488ff, legs: 0x112266, label: 'BLUE' },
 };
 
-const BLUE_SPAWN_Z_MIN = -150;
-const BLUE_SPAWN_Z_MAX = -130;
-const RED_SPAWN_Z_MIN = 130;
-const RED_SPAWN_Z_MAX = 150;
-const SPAWN_X_RANGE = 40;
+const BLUE_SPAWN_Z_MIN = -120;
+const BLUE_SPAWN_Z_MAX = -100;
+const RED_SPAWN_Z_MIN = 100;
+const RED_SPAWN_Z_MAX = 120;
+const SPAWN_X_RANGE = 20;
 
 const BLUE_FLAG_POS = { x: 0, z: -80 };
 const RED_FLAG_POS = { x: 0, z: 80 };
